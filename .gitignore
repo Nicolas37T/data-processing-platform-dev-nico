@@ -1,0 +1,47 @@
+# Ignore Python bytecode files
+__pycache__/
+
+# Ignore Docker related files
+.dockerignore
+
+# Ignore local environment files
+.env
+*.db
+# Ignore logs and other runtime data
+/logs/
+/*.log
+
+# Ignore compiled Python files
+*.pyc
+
+# Ignore system files from macOS
+.DS_Store
+
+# Ignore editor and IDE files
+.idea/
+.vscode/
+
+# Ignore any sensitive or generated files
+*.env
+
+# Ignore all local downloads
+/local_downloads/
+
+# Airflow config
+airflow.cfg
+unittests.cfg
+webserver_config.py
+*.pid
+*.err
+*.out
+
+# Ignore certain dirs and files
+standalone_admin_password.txt
+tmp/
+
+venv/
+
+# Ignore xlsx, sqlite, pdf files
+*xlsx
+*pdf
+*sqlite

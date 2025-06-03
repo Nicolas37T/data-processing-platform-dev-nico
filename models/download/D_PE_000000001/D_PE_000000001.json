@@ -1,0 +1,6 @@
+{
+    "DagId": "D_BO_000000463",
+    "Schedule": "'1 0 1 * *'",
+    "Tags": "'bcrp'",
+    "ConnectionID": "postgres_default"
+}

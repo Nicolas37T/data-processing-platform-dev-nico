@@ -1,0 +1,57 @@
+# Proveedores de Airflow (versiones compatibles)
+apache-airflow-providers-amazon
+apache-airflow-providers-google
+apache-airflow-providers-microsoft-azure
+apache-airflow-providers-snowflake
+apache-airflow-providers-slack
+apache-airflow-providers-elasticsearch
+apache-airflow-providers-mongo
+apache-airflow-providers-redis
+apache-airflow-providers-sendgrid
+apache-airflow-providers-postgres
+
+# Azure SDK (sin versiones fijas para evitar conflictos)
+azure-storage-blob
+azure-storage-file-datalake
+azure-keyvault-secrets
+azure-identity
+
+# Google Cloud SDK
+google-cloud-storage
+google-cloud-bigquery
+google-cloud-secret-manager
+
+# Conectores de bases de datos
+snowflake-connector-python
+pymongo
+redis
+
+# Procesamiento de datos (versiones flexibles)
+pandas>=2.1.2,<2.2
+numpy
+pyarrow
+
+# PDF y documentos
+PyMuPDF
+pypdf
+pdfplumber
+tabula-py
+
+# Machine Learning y AI
+cohere
+huggingface-hub
+tokenizers
+
+# Web scraping y automation
+playwright
+beautifulsoup4
+
+# Utilidades específicas
+xlwings
+openpyxl
+gdown
+looker-sdk
+xlrd
+unidecode
+rapidfuzz
+rich
