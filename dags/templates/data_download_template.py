@@ -10,7 +10,7 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 import socket
 import pytz
-sys.path.append('/home/datax/platform_project')
+sys.path.append('/opt/airflow')
 from models.download.tools.download_tools import convert_win_path, convert_unix_path, execution_log
 from models.download.tools.download_hash import Download_Hash
 from airflow.utils.db import provide_session
