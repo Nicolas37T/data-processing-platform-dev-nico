@@ -248,13 +248,14 @@ def create_dag(dag,connection_id,id_dag=None):
         conversion_connection = conversion_pg_hook.get_conn() 
         
         conversion_sql = f"SELECT r.code as executor_code, r.converted_to, f.code FROM report as r LEFT JOIN file as f ON r.id_file = f.id_file WHERE f.code ='{id_dag}' AND r.\"isActive\" = TRUE"
-        download_df = pd.DataFrame(data=downloads_records,columns=['id_download','path'])
+        download_df = pd.DataFrame(data=downloads_records,columns=['id_download','path','downloaded_to'])
         conversion_df = pd.read_sql(sql=conversion_sql, con=conversion_connection)
         
         download_df['code'] = id_dag
         merged_df = pd.merge(left=download_df,right=conversion_df,how='inner',on='code')
             
         merged_df['code'] = merged_df['code'].replace('D_','C_',regex=True)
+        merged_df = merged_df.sort_values(by=['downloaded_to', 'executor_code'], ascending=[True, True])
         
         downloads = merged_df.to_dict(orient='records')
         ti.xcom_push(key='downloads', value=downloads)               
@@ -267,7 +268,8 @@ def create_dag(dag,connection_id,id_dag=None):
                 task_id=f'trigger_{download["executor_code"]}',
                 trigger_dag_id=f'{download["code"]}',
                 conf={'file': download["path"], 'code':download["executor_code"], 'id_download':download["id_download"]},
-                wait_for_completion=True
+                wait_for_completion=True,
+            allowed_states=['success', 'failed']
             ).execute(context=context)
 
     with dag:
