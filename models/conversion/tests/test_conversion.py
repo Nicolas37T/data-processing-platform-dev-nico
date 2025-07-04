@@ -71,7 +71,7 @@ class TestConversion(unittest.TestCase):
         verify_values(data_df=report_df)
 
         # Validate date column
-        self.assertTrue("fecha", report_df.columns[-2], f"The 'fecha' column must be the second-to-last column in the DataFrame (found: {report_df.columns[-2]}")
+        self.assertEqual("fecha", report_df.columns[-2], f"The 'fecha' column must be the second-to-last column in the DataFrame (found: {report_df.columns[-2]}")
         try:
             pd.to_datetime(report_df['fecha'], errors='raise', format='%Y-%m-%d')
         except ValueError as e:
