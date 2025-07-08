@@ -248,21 +248,15 @@ def verify_values(data_df):
     
     print("Value verification completed successfully. All values in 'valor' column are numeric.")
 
-def get_xlsx_report_dataframe(dataframe, key_words):
-    pass
-    # page_to_extract = None
-    # for page in pdf.pages:
-    #     if num_caracteres == 'ALL':
-    #         lines = page.extract_text()
-    #     else:
-    #         lines = page.extract_text()[:num_caracteres]
+def get_xlsx_report_dataframe(file_path, key_words):
+    tables = pd.read_excel(file_path,sheet_name=None,header=None)
 
-    #     key_words_match = search_key_words(text=lines , key_words=key_words)
-
-    #     if key_words_match:                        
-    #         return page
-    # if not page_to_extract:
-    #     raise ValueError("The report could not be found in the file.")            
+    for i,sheet_name in enumerate(tables):        
+        search_mask = tables[sheet_name].astype(str).map(lambda x: search_key_words(text=x,key_words=key_words)).any(axis=1)
+        search_df = tables[sheet_name].loc[search_mask]
+        if not search_df.empty:
+            return (tables[sheet_name],i+1)
+    raise ValueError("The report could not be found in the file.")
 
 def convert_win_path(path_win, add_dir=""):
 
