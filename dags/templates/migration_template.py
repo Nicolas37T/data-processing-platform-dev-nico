@@ -192,12 +192,16 @@ def create_dag(dag,connection_id,id_dag=None):
         product_codes = pg_hook.get_records(sql=sql,parameters=(code,))
         print("PRODUCT_CODES",product_codes)
         for product_code in product_codes:
-            TriggerDagRunOperator(
-                task_id=f'trigger_{product_code[0]}',
-                trigger_dag_id=f'{product_code[0]}',
-                conf={'code': code, 'from':load_metadata["from_date"], 'to':load_metadata["to_date"]},
-                wait_for_completion=False
-            ).execute(context=context)
+            try:
+                TriggerDagRunOperator(
+                    task_id=f'trigger_{product_code[0]}',
+                    trigger_dag_id=f'{product_code[0]}',
+                    conf={'code': code, 'from':load_metadata["from_date"], 'to':load_metadata["to_date"]},
+                    wait_for_completion=False
+                ).execute(context=context)
+            except Exception as e:
+                print(f"There is an error trying to execute: {product_code[0]}",e)
+                continue
 
     with dag:
 

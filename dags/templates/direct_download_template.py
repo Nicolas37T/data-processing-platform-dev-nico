@@ -285,14 +285,19 @@ def create_dag(dag,connection_id,id_dag=None):
     def _trigger_dags(**context):
         ti = context['ti']
         downloads = ti.xcom_pull(task_ids='assigner', key='downloads')
-        for download in downloads:    
-            TriggerDagRunOperator(
-                task_id=f'trigger_{download["executor_code"]}',
-                trigger_dag_id=f'{download["code"]}',
-                conf={'file': download["path"], 'code':download["executor_code"], 'id_download':download["id_download"]},
-                wait_for_completion=True,
-            allowed_states=['success', 'failed']
-            ).execute(context=context)
+        for download in downloads:
+            try:   
+                TriggerDagRunOperator(
+                    task_id=f'trigger_{download["executor_code"]}',
+                    trigger_dag_id=f'{download["code"]}',
+                    conf={'file': download["path"], 'code':download["executor_code"], 'id_download':download["id_download"]},
+                    wait_for_completion=True,
+                    allowed_states=['success', 'failed'],
+                    failed_states=[]
+                ).execute(context=context)
+            except Exception as e:
+                print(f"DAG {download['code']} falló pero se continuará: {str(e)}")
+                continue
 
     with dag:
         
