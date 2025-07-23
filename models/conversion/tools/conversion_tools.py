@@ -7,6 +7,7 @@ import posixpath
 import numpy as np
 import pandas as pd
 import pandas.api.types as ptypes
+from typing import Tuple,List
 from unidecode import unidecode
 from rapidfuzz import fuzz, process
 from models.conversion.tools.text_normalization import Text_Normalization
@@ -248,15 +249,49 @@ def verify_values(data_df):
     
     print("Value verification completed successfully. All values in 'valor' column are numeric.")
 
-def get_xlsx_report_dataframe(file_path, key_words):
+def get_xlsx_report_dataframe(file_path:str, key_words:str, page_number:int=1, sheets_to_exclude:List[int]=[]) -> Tuple[pd.DataFrame,int]:
     tables = pd.read_excel(file_path,sheet_name=None,header=None)
+    page_number = 0 if (n:=page_number-1)<0 or n>len(tables) else n
 
-    for i,sheet_name in enumerate(tables):        
+    if page_number != 0:
+        page_sheet_name = list(tables.keys())[page_number]
+        search_mask = tables[page_sheet_name].astype(str).map(lambda x: search_key_words(text=x,key_words=key_words)).any(axis=1)
+        search_df = tables[page_sheet_name].loc[search_mask]
+        if not search_df.empty:
+            return (tables[page_sheet_name],page_number+1)
+
+    for i,sheet_name in enumerate(tables):
+        if i in sheets_to_exclude:
+            continue       
         search_mask = tables[sheet_name].astype(str).map(lambda x: search_key_words(text=x,key_words=key_words)).any(axis=1)
         search_df = tables[sheet_name].loc[search_mask]
         if not search_df.empty:
             return (tables[sheet_name],i+1)
-    raise ValueError("The report could not be found in the file.")
+    return
+
+def get_xlsx_report_dataframe_full(file_path:str, key_words:str, page_number:int=1, sheets_to_exclude:List[int]=[]) -> Tuple[pd.DataFrame,int]:
+    tables = pd.read_excel(file_path,sheet_name=None,header=None)
+    page_number = 0 if (n:=page_number-1)<0 or n>len(tables) else n
+    
+    if page_number != 0:
+        page_sheet_name = list(tables.keys())[page_number]        
+        df = tables[page_sheet_name].apply(lambda x: " ".join(x.dropna().astype(str)))
+        search_mask = df.astype(str).map(lambda x: search_key_words(text=x,key_words=key_words))#.any(axis=1)
+        search_df = df.loc[search_mask]
+        print(search_df,search_df.empty)
+        if not search_df.empty:
+            return (tables[page_sheet_name],page_number+1)
+
+    for i,sheet_name in enumerate(tables):
+        if i in sheets_to_exclude:
+            continue
+        df = tables[sheet_name].dropna(how='all')
+        df = df.apply(lambda x: " ".join(x.dropna().astype(str)))      
+        search_mask = df.astype(str).map(lambda x: search_key_words(text=x,key_words=key_words))#.any(axis=1)
+        search_df = df.loc[search_mask]
+        if not search_df.empty:
+            return (tables[sheet_name],i+1)
+    return
 
 def convert_win_path(path_win, add_dir=""):
 

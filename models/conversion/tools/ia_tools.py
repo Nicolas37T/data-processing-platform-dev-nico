@@ -98,10 +98,18 @@ class IA_Tools():
         text = str(text)
         text = text.strip()
         text = re.sub(r"\s+", " ", text)
-        text = [word.capitalize() if word.lower() not in spanish_stop_words else word.lower() for word in text.split()]
-        text[0] = text[0].capitalize()
         
-        text = [re.sub(r'^\((\w)', lambda m: '(' + m.group(1).upper(),word) if word.startswith('(') else word for word in text]
+        text_list = []
+        for word in text.split():
+            if word.lower() in spanish_stop_words:
+                text_list.append(word.lower())
+            elif len(word)<=5 and word.isupper():
+                text_list.append(word)
+            else:
+                text_list.append(word.capitalize())        
+        text_list[0] = text_list[0] if len(word)<=5 and word.isupper() else text_list[0].capitalize()
+        
+        text = [re.sub(r'^\((\w)', lambda m: '(' + m.group(1).upper(),word) if word.startswith('(') else word for word in text_list]
         text = ' '.join(text)
 
         return text
