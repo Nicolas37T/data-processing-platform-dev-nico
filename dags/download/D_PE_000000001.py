@@ -18,7 +18,7 @@ default_args = {'owner': 'datax',
                     }
 
 dag = DAG('D_PE_000000001',
-        schedule_interval= '0 6 * * *',
+        schedule= '0 6 * * *',
         default_args=default_args,        
         tags= ['Download'],
         catchup=False )

@@ -1,4 +1,6 @@
-# Proveedores de Airflow (versiones compatibles)
+# Proveedores de Airflow 3.x
+apache-airflow-providers-standard
+apache-airflow-providers-fab
 apache-airflow-providers-amazon
 apache-airflow-providers-google
 apache-airflow-providers-microsoft-azure
@@ -10,7 +12,7 @@ apache-airflow-providers-redis
 apache-airflow-providers-sendgrid
 apache-airflow-providers-postgres
 
-# Azure SDK (sin versiones fijas para evitar conflictos)
+# Azure SDK
 azure-storage-blob
 azure-storage-file-datalake
 azure-keyvault-secrets
@@ -26,8 +28,9 @@ snowflake-connector-python
 pymongo
 redis
 
-# Procesamiento de datos (versiones flexibles)
-pandas>=2.1.2,<2.2
+# Procesamiento de datos
+# pandas >= 2.2 requerido: la serie 2.1.x no tiene wheels para Python 3.13
+pandas>=2.2.0
 numpy
 pyarrow
 

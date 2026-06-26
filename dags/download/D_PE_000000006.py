@@ -5,8 +5,7 @@ import pytz
 from datetime import datetime
 from airflow import DAG
 from airflow.example_dags.plugins.workday import AfterWorkdayTimetable
-from airflow.utils.dates import days_ago
-from dags.templates.data_download_template import create_dag
+from templates.data_download_template import create_dag
 
 local_tz = pytz.timezone("America/La_Paz")
 default_args = {'owner': 'datax',
@@ -19,7 +18,7 @@ default_args = {'owner': 'datax',
                     }
 
 dag = DAG('D_PE_000000006',
-        schedule_interval= '12 8 * * *',
+        schedule= '12 8 * * *',
         default_args=default_args,        
         tags= ['Download'],
         catchup=False )

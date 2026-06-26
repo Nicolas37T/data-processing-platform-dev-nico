@@ -48,7 +48,7 @@ class Migration_Base():
             """))
             connection.execute(text(f"DELETE FROM \"{storage_table_schema}\".\"{storage_table_name}\" WHERE fecha >= \'{date_condition}\';"))
 
-            result = connection.execute(count_query)
+            result = connection.execute(text(count_query))
             num_records = result.scalar()
             return f'{storage_table_schema}.{storage_table_name}_backup',num_records
 
@@ -96,7 +96,7 @@ class Migration_Base():
         
         count_query = f"SELECT COUNT(*) FROM \"{storage_table_schema}\".\"{storage_table_name}\""
         with db_conn.connect() as connection:
-            result = connection.execute(count_query)
+            result = connection.execute(text(count_query))
             num_records_after = result.scalar()
             
         df_dict['num_records'] = num_records

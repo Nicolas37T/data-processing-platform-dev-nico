@@ -1,4 +1,4 @@
-FROM apache/airflow:2.10.4
+FROM apache/airflow:3.2.2
 
 # Install system dependencies
 USER root
@@ -30,8 +30,8 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Set JAVA_HOME (optional but good practice)
-ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+# JAVA_HOME via symlink estándar de Debian — funciona en amd64 y arm64
+ENV JAVA_HOME=/usr/lib/jvm/default-java
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 ENV PYTHONPATH="${PYTHONPATH}:/opt/airflow"
 
