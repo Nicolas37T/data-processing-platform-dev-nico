@@ -156,6 +156,8 @@ def get_date(text):
     return f"{date[0]}-{date[1]:02}-{day}"
 
 def get_col_date(col):
+    if pd.isna(col):
+        return col
     quarters = {
         "i": 3,
         "ii": 6,
@@ -248,6 +250,55 @@ def verify_values(data_df):
         raise Exception("Value verification failed: 'valor' column contains non-numeric or invalid values.")
     
     print("Value verification completed successfully. All values in 'valor' column are numeric.")
+
+def is_all_string_or_nan(dataframe: pd.DataFrame) -> bool:
+    columns_to_check = dataframe.columns[:-1]
+    violating_columns = [
+        col for col in columns_to_check
+        if not dataframe[col].apply(lambda x: isinstance(x, str) or pd.isna(x)).all()
+    ]
+    if violating_columns:
+        print(f"The following columns do NOT follow the rule (must be string or NaN): {violating_columns}")
+        return False
+    print("All checked columns comply with the rule (only strings or NaN).")
+    return True
+
+
+def map_months_to_dates(month_row, year_map, date_format="%Y-%m-%d"):
+    """
+    Maps month names in a Series to date strings using a year mapping.
+
+    Parameters:
+        month_row : pd.Series — Series with month info per column index.
+        year_map : Dict[Any, int] — Maps column indices to years.
+        date_format : str — Output date format (default: '%Y-%m-%d').
+
+    Returns:
+        Dict[Any, str] — Column index → formatted date string.
+    """
+    month_map = {}
+
+    for col_idx, value in month_row.items():
+        if pd.isna(value) or not year_map.get(col_idx):
+            continue
+
+        month_text, year = str(value).strip(), year_map[col_idx]
+
+        day_match = re.search(r'(\w{3,})\s*\([^)]*?dia?\s*(\d+)', month_text, re.IGNORECASE)
+
+        if day_match:
+            month_part, day = day_match.groups()
+            month_num = month_to_number(month_part) or month_abr_to_number(month_part)
+            if month_num:
+                month_map[col_idx] = f"{year}-{month_num:02d}-{int(day):02d}"
+        else:
+            month_num = month_to_number(month_text.lower()) or month_abr_to_number(month_text.lower())
+            if month_num:
+                day = last_day_month(year, month_num)
+                month_map[col_idx] = format_date(f"{year}-{month_num}-{day}").strftime(date_format)
+
+    return month_map
+
 
 def get_xlsx_report_dataframe(file_path:str, key_words:str, page_number:int=1, sheets_to_exclude:List[int]=[]) -> Tuple[pd.DataFrame,int]:
     tables = pd.read_excel(file_path,sheet_name=None,header=None)

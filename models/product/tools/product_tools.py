@@ -166,11 +166,11 @@ class TableColumnTypes:
 def get_free_date(db_conn:Engine, frecuency:str, database_code:str, format:str='%Y-%m-%d') -> str:
     frecuency = frecuency.lower().strip()
     free_dict = {
-        'diario':200,
-        'semanal':100,
-        'mensual':12,
-        'trimestral':24,
-        'semestral':6,
+        'diario':60,
+        'semanal':12,
+        'mensual':6,
+        'trimestral':5,
+        'semestral':4,
         'anual':2,
     }
     free_values = free_dict.get(frecuency)
@@ -180,7 +180,7 @@ def get_free_date(db_conn:Engine, frecuency:str, database_code:str, format:str='
     dates_query = f"SELECT DISTINCT(tiempo) AS dates FROM \"database\".\"{database_code}\" ORDER BY dates DESC LIMIT {free_values+1}"
 
     with db_conn.connect() as connection:
-        result = connection.execute(dates_query).fetchall()
+        result = connection.execute(text(dates_query)).fetchall()
     
     free_date = result[-1][0]
     free_date:date = free_date.strftime(format)

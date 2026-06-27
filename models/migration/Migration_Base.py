@@ -109,7 +109,7 @@ class Migration_Base():
         if not table_name:
             table_name = self.__class__.__name__
         with sqlite3.connect(table_path) as connection:
-            query = f"SELECT MIN(fecha), MAX(fecha) FROM {table_name}"
+            query = f"SELECT MIN(fecha), MAX(fecha) FROM {table_name} WHERE fecha != '-'"
             result = connection.execute(query)
             data = result.fetchone()
         return {

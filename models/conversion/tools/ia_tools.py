@@ -169,7 +169,7 @@ class Datax_Cohere(IA_Tools):
     cohere_client = cohere.ClientV2(api_key=api_key)
     
     @classmethod
-    def compare_posibilities(self,text:str, posibilities:List[str], model='command-r-plus')->str:
+    def compare_posibilities(self,text:str, posibilities:List[str], model='command-a-03-2025')->str:
         self.text = text
         self.posibilities = posibilities
 
@@ -187,30 +187,33 @@ class Datax_Cohere(IA_Tools):
     
     @classmethod
     def compare_posibilities_embeddings(self,text:str, posibilities:List[str], model='embed-multilingual-v3.0')->str:
-        threshold = 0.9 if (text.isupper() and len(text)<=5) else 0.8
-        print('TEXTO', text)
-        print(f'OPCIONES: {posibilities}')
-        text = text.lower()
-        lower_posibilities = [posibility.lower() for posibility in posibilities]
+        try:
+            threshold = 0.9 if (text.isupper() and len(text)<=5) else 0.8
+            print('TEXTO', text)
+            print(f'OPCIONES: {posibilities}')
+            text = text.lower()
+            lower_posibilities = [posibility.lower() for posibility in posibilities]
 
-        response = self.cohere_client.embed(
-            texts= [text] + lower_posibilities,
-            model=model,
-            input_type='search_query',  # para comparación de textos/palabras
-            embedding_types=['float']
-        )
-        
-        embeddings = response.embeddings.float_
+            response = self.cohere_client.embed(
+                texts= [text] + lower_posibilities,
+                model=model,
+                input_type='search_query',  # para comparación de textos/palabras
+                embedding_types=['float']
+            )
 
-        embeddings_response = self.filter_embeddings(embeddings, posibilities, threshold=threshold)
-        
-        time.sleep(4)
-        print("RESPUESTA",embeddings_response)
-        
-        return embeddings_response
+            embeddings = response.embeddings.float_
+
+            embeddings_response = self.filter_embeddings(embeddings, posibilities, threshold=threshold)
+
+            print("RESPUESTA",embeddings_response)
+            return embeddings_response
+        except Exception as e:
+            print("There is an error trying to compare posibilities")
+            time.sleep(6)
+            return '-'
     
     @classmethod
-    def insert_new_text(self,text:str, model='command-r-plus')->str:
+    def insert_new_text(self,text:str, model='command-a-03-2025')->str:
         self.text = text
         print(f'NEW TEXT:{text}')        
 

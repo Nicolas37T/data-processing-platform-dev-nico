@@ -41,6 +41,7 @@ iso4217_currencies_exchange_rate = {
     "estados unidos": "USD",
     "venezuela bolivar": "VED",
     "us$": "USD",
+    "usd": "USD",
 }
 
 def formated_col(col:str):

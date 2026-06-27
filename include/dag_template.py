@@ -5,7 +5,6 @@ import pytz
 from datetime import datetime
 from airflow import DAG
 from airflow.example_dags.plugins.workday import AfterWorkdayTimetable
-from airflow.utils.dates import days_ago
 from templates.dag-template import create_dag
 
 local_tz = pytz.timezone("America/La_Paz")
@@ -19,7 +18,7 @@ default_args = {'owner': 'datax',
                     }
 
 dag = DAG(dag-id,
-        #schedule_interval= schedule-to-replace,
+        #schedule= schedule-to-replace,
         default_args=default_args,        
         tags= [tagsToReplace],
         catchup=False )

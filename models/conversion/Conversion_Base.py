@@ -39,7 +39,8 @@ class Conversion_Base():
 
         # Define the temporary file path
         tmp_file = os.path.join(path, file_name)
-        shutil.copy(src=file_path,dst=tmp_file)
+        if tmp_file != file_path:
+            shutil.copy(src=file_path,dst=tmp_file)
         print(f"Copied '{file_path}' to temporary location: '{tmp_file}'.")
         try:
             # Check if the file exists
@@ -107,7 +108,7 @@ class Conversion_Base():
         traceback.print_exc()
         return ''
     
-    def text_match(self, df:pd.DataFrame,db_aux_conn, replacement_table_name,replacement_table_schema, dag_run_date, table_exists=True, first_execution=False)->pd.DataFrame:
+    def text_match(self, df:pd.DataFrame,db_aux_conn, replacement_table_name,replacement_table_schema, dag_run_date, table_exists=True, first_execution=False, text_normalization=True)->pd.DataFrame:
         """
         Normalizes text data in a DataFrame by replacing inconsistent values with standardized ones.
         It uses an auxiliary database table for replacements and updates the table with new replacements if needed.
@@ -127,6 +128,9 @@ class Conversion_Base():
                 - The updated DataFrame with normalized text values.
         """
 
+        if not text_normalization:
+            return ({}, df)
+
         # Replace multiple spaces with a single space and convert 'nan' strings to actual NaN values
         df = df.replace(r'\s+',' ', regex=True).replace('nan',np.nan)
         
@@ -141,7 +145,7 @@ class Conversion_Base():
             column = df.loc[df[col].notna(),col] # Filter out NaN values
             
              # Mask to identify numeric values after removing unnecessary characters
-            numeric_mask = pd.to_numeric(column.replace(r'\s+','',regex=True).replace('-','0').apply(lambda x: m if (m:=re.sub(r'[.(),%-]', '', str(x)))!="" else '0'),errors='coerce').notna()
+            numeric_mask = pd.to_numeric(column.replace(r'\s+','',regex=True).replace('-','0').apply(lambda x: m if (m:=re.sub(r'[.(),%e:-]', '', str(x)))!="" else '0'),errors='coerce').notna()
             
             # Collect non-numeric unique strings for potential replacements
             strings_col = column[~numeric_mask].drop_duplicates()            
@@ -379,8 +383,11 @@ class Conversion_Base():
                 raise ValueError('Unsupported File Format')
             
             #! To supports old fabric
-            xlsx_file_path = os.path.join(path, f'{date}_{code}.xlsx')
-            validated_df.to_excel(xlsx_file_path, index=False)
+            try:
+                xlsx_file_path = os.path.join(path, f'{date}_{code}.xlsx')
+                validated_df.to_excel(xlsx_file_path, index=False)
+            except Exception as e:
+                print(f"An error occurred saving the excel file: {e}")
 
             self.store_excel_file(df=replaces_df_merged, file_path=xlsx_file_path, sufix='replaces',file_extension='xlsx')
 

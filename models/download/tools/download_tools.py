@@ -1,6 +1,7 @@
 import csv
 import random
 import os
+import time
 from datetime import datetime
 import calendar
 import re
@@ -126,11 +127,13 @@ def month_to_number(month):
         "febrero": 2,
         "marzo": 3,
         "abril": 4,
+        "april": 4,
         "mayo": 5,
         "junio": 6,
         "julio": 7,
         "agosto": 8,
         "septiembre": 9,
+        "setiembre": 9,
         "octubre": 10,
         "noviembre": 11,
         "diciembre": 12
@@ -653,3 +656,25 @@ def execution_log(path,execution_date, key_words,file_code, file_name, publicati
             for file in files:
                 num=num+1
                 f.write(f"{str(num).ljust(5)} {execution_date} {file['updated_to'].ljust(13)} {duration} {execution_types[execution_type].ljust(15)} {file['download_url']}\n")
+
+
+def read_excel(file_name:str, sheet_name=0, headers=None) -> pd.DataFrame:
+    try:
+        return pd.read_excel(file_name, sheet_name=sheet_name, header=headers)
+    except ValueError:
+        return pd.read_excel(file_name, sheet_name=sheet_name, header=headers, engine='xlrd')
+
+
+def human_delay(min_sec=2, max_sec=5, rest_probability=0.1):
+    """
+    Simulates human-like waiting behavior between requests.
+    """
+    wait = random.uniform(min_sec, max_sec)
+
+    if random.random() < rest_probability:
+        extra_rest = random.uniform(10, 20)
+        print(f"Taking a long break of {extra_rest:.2f}s...")
+        wait += extra_rest
+
+    print(f"Waiting for {wait:.2f} seconds...")
+    time.sleep(wait)

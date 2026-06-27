@@ -58,3 +58,4 @@ xlrd
 unidecode
 rapidfuzz
 rich
+psutil
