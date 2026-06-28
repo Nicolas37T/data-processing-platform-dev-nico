@@ -59,3 +59,6 @@ unidecode
 rapidfuzz
 rich
 psutil
+
+# dbt — usado en product_dbt_template y product_star_model_template
+dbt-postgres

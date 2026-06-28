@@ -40,7 +40,6 @@ USER airflow
 
 # Copy your requirements.txt file into the container
 COPY requirements.txt /tmp/requirements.txt
-COPY .env /opt/airflow/.env
 
 # Install the Airflow version specified and any additional requirements
 RUN pip install apache-airflow==${AIRFLOW_VERSION} -r /tmp/requirements.txt
