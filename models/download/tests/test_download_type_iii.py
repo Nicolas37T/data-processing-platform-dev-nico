@@ -20,7 +20,11 @@ class TestDownloadTypeIII(unittest.TestCase):
     def setUp(self):
         self.robot = get_executor(CODE_ROBOT)
 
-        platform_engine = create_engine("postgresql+psycopg2://postgres:datax@10.0.0.12:5432/platform_db")
+        _host = os.environ.get("BUSINESS_DB_HOST", "localhost")
+        _port = os.environ.get("BUSINESS_DB_PORT", "5432")
+        _user = os.environ.get("BUSINESS_DB_USER", "postgres")
+        _password = os.environ.get("BUSINESS_DB_PASSWORD", "datax")
+        platform_engine = create_engine(f"postgresql+psycopg2://{_user}:{_password}@{_host}:{_port}/platform_db")
         file_data = pd.read_sql_query(F"SELECT * FROM file WHERE code = \'{CODE_ROBOT}\';",con=platform_engine)
         file_data = file_data.to_dict('records')[0]
 

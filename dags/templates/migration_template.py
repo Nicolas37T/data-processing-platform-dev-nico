@@ -17,6 +17,11 @@ local_tz = pytz.timezone('America/La_Paz')
 
 _AIRFLOW_API_BASE = os.environ.get("AIRFLOW_API_BASE_URL", "http://airflow-apiserver:8080")
 
+_DATA_DB_HOST = os.environ.get("DATA_DB_HOST", "postgres")
+_DATA_DB_PORT = os.environ.get("DATA_DB_PORT", "5432")
+_DATA_DB_USER = os.environ.get("DATA_DB_USER", "postgres")
+_DATA_DB_PASSWORD = os.environ.get("DATA_DB_PASSWORD", "datax")
+
 
 def _trigger_dag_via_api(dag_id: str, conf: dict) -> None:
     resp = requests.post(
@@ -96,7 +101,7 @@ def create_dag(dag, connection_id, id_dag=None):
         storage_table = storage_table.split(';')
 
         executor = get_executor(code=code)
-        db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}")
+        db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
         with db_conn.connect() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {storage_table[0]}"))
         inspector = inspect(db_conn)
@@ -141,7 +146,7 @@ def create_dag(dag, connection_id, id_dag=None):
             dataframe = executor.process_numeric_column(dataframe=dataframe, decimal_separator=decimal_separator, conversion_factor=df_dict['conversion_factor'])
             print("LENGTH", len(dataframe))
 
-            db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}")
+            db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
 
             df_dict = executor.load_to_storage_table(dataframe=dataframe, df_dict=df_dict, storage_table_name=storage_table[1], storage_table_schema=storage_table[0], db_conn=db_conn)
 
@@ -160,7 +165,7 @@ def create_dag(dag, connection_id, id_dag=None):
         if backup_path:
             country_code = code.split('_')[1]
             storage_table = storage_table.split(';')
-            db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}")
+            db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
             with db_conn.begin() as connection:
                 connection.execute(text(f"""
                             INSERT INTO \"{storage_table[0]}\".\"{storage_table[1]}\"

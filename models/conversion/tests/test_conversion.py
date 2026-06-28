@@ -1,5 +1,6 @@
 import sys
 sys.path.append('d:/DATAX/data-processing-platform')
+import os
 import unittest
 import importlib
 import pandas as pd
@@ -21,7 +22,11 @@ class TestConversion(unittest.TestCase):
     def setUp(self):
         self.robot = get_executor(REPORT_CODE)
         
-        platform_engine = create_engine("postgresql+psycopg2://postgres:datax@10.0.0.12:5432/platform_db")
+        _host = os.environ.get("BUSINESS_DB_HOST", "localhost")
+        _port = os.environ.get("BUSINESS_DB_PORT", "5432")
+        _user = os.environ.get("BUSINESS_DB_USER", "postgres")
+        _password = os.environ.get("BUSINESS_DB_PASSWORD", "datax")
+        platform_engine = create_engine(f"postgresql+psycopg2://{_user}:{_password}@{_host}:{_port}/platform_db")
         report_data = pd.read_sql_query(sql=f'SELECT * FROM report WHERE code = \'{REPORT_CODE}\'',con=platform_engine)
         report_data = report_data.to_dict('records')[0]
         self.report_data = report_data        
@@ -29,7 +34,11 @@ class TestConversion(unittest.TestCase):
         self.replacement_table = report_data['replacement_table'].split(';')
         country_code = REPORT_CODE.split('_')[1]
 
-        engine = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}_AUX")
+        _data_host = os.environ.get("DATA_DB_HOST", "localhost")
+        _data_port = os.environ.get("DATA_DB_PORT", "5432")
+        _data_user = os.environ.get("DATA_DB_USER", "postgres")
+        _data_password = os.environ.get("DATA_DB_PASSWORD", "datax")
+        engine = create_engine(f"postgresql+psycopg2://{_data_user}:{_data_password}@{_data_host}:{_data_port}/DATA_DB_{country_code}_AUX")
         with engine.connect() as conn:
             with conn.begin():
                 conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.replacement_table[0]}"))

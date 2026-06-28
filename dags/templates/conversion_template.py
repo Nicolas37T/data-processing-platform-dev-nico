@@ -21,6 +21,11 @@ local_tz = pytz.timezone('America/La_Paz')
 
 _AIRFLOW_API_BASE = os.environ.get("AIRFLOW_API_BASE_URL", "http://airflow-apiserver:8080")
 
+_DATA_DB_HOST = os.environ.get("DATA_DB_HOST", "postgres")
+_DATA_DB_PORT = os.environ.get("DATA_DB_PORT", "5432")
+_DATA_DB_USER = os.environ.get("DATA_DB_USER", "postgres")
+_DATA_DB_PASSWORD = os.environ.get("DATA_DB_PASSWORD", "datax")
+
 
 def _trigger_dag_via_api(dag_id: str, conf: dict) -> None:
     resp = requests.post(
@@ -187,7 +192,7 @@ def create_dag(dag, connection_id, id_dag=None):
         country_code = code.split('_')[1]
         replacement_table = replacement_table.split(';')
 
-        db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}_AUX")
+        db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}_AUX")
 
         with db_conn.connect() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {replacement_table[0]}"))

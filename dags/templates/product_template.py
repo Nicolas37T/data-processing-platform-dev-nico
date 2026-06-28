@@ -14,6 +14,11 @@ from models.product.tools.product_tools import get_free_date
 # Setting the local timezone
 local_tz = pytz.timezone('America/La_Paz')
 
+_DATA_DB_HOST = os.environ.get("DATA_DB_HOST", "postgres")
+_DATA_DB_PORT = os.environ.get("DATA_DB_PORT", "5432")
+_DATA_DB_USER = os.environ.get("DATA_DB_USER", "postgres")
+_DATA_DB_PASSWORD = os.environ.get("DATA_DB_PASSWORD", "datax")
+
 @provide_session
 def delete_xcoms(dag_run, session=None):
     """
@@ -78,7 +83,7 @@ def create_dag(dag,connection_id,id_dag):
         country_code = code.split('_')[1]
        
         executor = get_executor(code=code)
-        db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}")
+        db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
         with db_conn.connect() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS database"))
         inspector = inspect(db_conn)
@@ -112,7 +117,7 @@ def create_dag(dag,connection_id,id_dag):
 
         executor = get_executor(code=code)
 
-        db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}")
+        db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
         dataframe = executor.get_load(db_conn=db_conn, storage_table_name=storage_table[1], storage_table_schema=storage_table[0],from_date=from_date,to_date=to_date)
         if dataframe.empty:
             print("There's no data to load")
@@ -138,7 +143,7 @@ def create_dag(dag,connection_id,id_dag):
         csv_sql = ti.xcom_pull(key='csv_sql', task_ids='get_product_data')
 
         country_code = code.split('_')[1]
-        db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}")
+        db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
 
         executor = get_executor(code=code)
 

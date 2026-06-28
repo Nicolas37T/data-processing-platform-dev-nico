@@ -26,8 +26,8 @@ x-airflow-common:
     &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:datax@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://postgres:datax@postgres/airflow
     AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
     AIRFLOW__CORE__FERNET_KEY: ''
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
@@ -38,6 +38,21 @@ x-airflow-common:
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    # Airflow connection auto-registered via env var (platform metadata DB)
+    AIRFLOW_CONN_PLATFORM_DB: "postgresql://postgres:datax@postgres:5432/platform_db"
+    # Country code for this deployment (set in .env: COUNTRY=PE)
+    COUNTRY: "${COUNTRY:-XX}"
+    # Business metadata database (used by include/main-generate.py)
+    BUSINESS_DB_HOST: "postgres"
+    BUSINESS_DB_PORT: "5432"
+    BUSINESS_DB_USER: "postgres"
+    BUSINESS_DB_PASSWORD: "datax"
+    BUSINESS_DB_DATABASE: "platform_db"
+    # Data warehouse database (used by migration / conversion / product templates)
+    DATA_DB_HOST: "postgres"
+    DATA_DB_PORT: "5432"
+    DATA_DB_USER: "postgres"
+    DATA_DB_PASSWORD: "datax"
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/models:/opt/airflow/models
@@ -59,16 +74,37 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: datax
       POSTGRES_DB: airflow
+      # Passed through so init-db.sh can use it to name the DATA_DB databases
+      COUNTRY: "${COUNTRY:-XX}"
     volumes:
       - postgres-db-volume:/var/lib/postgresql/data
+      # Init scripts run once on first start (empty data volume)
+      - ./docker/init-db.sh:/docker-entrypoint-initdb.d/01-init-db.sh
+      - ./docker/platform_db.sql:/docker-entrypoint-initdb.d/platform_db.sql
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 10s
       retries: 5
       start_period: 5s
+    restart: always
+
+  mongo:
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: airflow
+      MONGO_INITDB_ROOT_PASSWORD: airflow
+      MONGO_INITDB_DATABASE: airflow
+    volumes:
+      - mongo-db-volume:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     restart: always
 
   redis:
@@ -207,6 +243,23 @@ services:
         /entrypoint airflow config list >/dev/null
         chown -R "${AIRFLOW_UID}:0" /opt/airflow/
         chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+        echo
+        echo "Registering Airflow connections..."
+        /entrypoint airflow connections add 'platform_db' \
+          --conn-type postgres \
+          --conn-host postgres \
+          --conn-port 5432 \
+          --conn-login postgres \
+          --conn-password datax \
+          --conn-schema platform_db || true
+        /entrypoint airflow connections add 'mongo_db' \
+          --conn-type mongo \
+          --conn-host mongo \
+          --conn-port 27017 \
+          --conn-login airflow \
+          --conn-password airflow \
+          --conn-schema airflow || true
+        echo "Connections registered."
     environment:
       <<: *airflow-common-env
       _AIRFLOW_DB_MIGRATE: 'true'
@@ -249,3 +302,4 @@ services:
 
 volumes:
   postgres-db-volume:
+  mongo-db-volume:

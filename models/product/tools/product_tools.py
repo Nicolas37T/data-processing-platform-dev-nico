@@ -1,3 +1,4 @@
+import os
 import math
 import pandas as pd
 import numpy as np
@@ -68,7 +69,12 @@ class CurrencyExchange():
         self.memory = {}
         self.currency_dataframe = pd.DataFrame()
 
-        db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_BO")
+        _host = os.environ.get("DATA_DB_HOST", "postgres")
+        _port = os.environ.get("DATA_DB_PORT", "5432")
+        _user = os.environ.get("DATA_DB_USER", "postgres")
+        _password = os.environ.get("DATA_DB_PASSWORD", "datax")
+        _country = os.environ.get("COUNTRY", "BO")
+        db_conn = create_engine(f"postgresql+psycopg2://{_user}:{_password}@{_host}:{_port}/DATA_DB_{_country}")
         query = f"SELECT titulo6, titulo7, fecha, unidad_metrica, en_boliviano FROM \"bcb\".\"DATA_D_BO_000000219_01\" WHERE fecha >= \'{min_date}\'"
         self.currency_dataframe = pd.read_sql_query(query, con=db_conn)        
         self.currency_dataframe = self.currency_dataframe[~self.currency_dataframe['titulo7'].str.contains('venta',case=False)]

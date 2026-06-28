@@ -1,3 +1,4 @@
+import os
 import pytz
 import sys
 sys.path.append('/home/datax/platform_project')
@@ -11,6 +12,11 @@ from models.product.Product_Base import Product_Base
 
 # Setting the local timezone
 local_tz = pytz.timezone('America/La_Paz')
+
+_DATA_DB_HOST = os.environ.get("DATA_DB_HOST", "postgres")
+_DATA_DB_PORT = os.environ.get("DATA_DB_PORT", "5432")
+_DATA_DB_USER = os.environ.get("DATA_DB_USER", "postgres")
+_DATA_DB_PASSWORD = os.environ.get("DATA_DB_PASSWORD", "datax")
 
 def create_dag(dag,connection_id,id_dag):
    
@@ -55,7 +61,7 @@ def create_dag(dag,connection_id,id_dag):
         csv_sql = ti.xcom_pull(key='csv_sql', task_ids='get_product_data')
 
         country_code = code.split('_')[1]
-        db_conn = create_engine(f"postgresql+psycopg2://postgres:datax@10.0.0.12:5432/DATA_DB_{country_code}")
+        db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
 
         executor = Product_Base()
 
