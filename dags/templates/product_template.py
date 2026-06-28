@@ -5,10 +5,8 @@ import sys
 sys.path.append('/home/datax/platform_project')
 from sqlalchemy import create_engine, inspect, text
 from airflow.operators.python import PythonOperator, BranchPythonOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator as PostgresOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from airflow.utils.db import provide_session
-from airflow.models import XCom
 from models.product.tools.product_tools import get_free_date
 
 # Setting the local timezone
@@ -19,29 +17,16 @@ _DATA_DB_PORT = os.environ.get("DATA_DB_PORT", "5432")
 _DATA_DB_USER = os.environ.get("DATA_DB_USER", "postgres")
 _DATA_DB_PASSWORD = os.environ.get("DATA_DB_PASSWORD", "datax")
 
-@provide_session
-def delete_xcoms(dag_run, session=None):
-    """
-    Function to delete XComs for the current DAG run, ensuring no old XCom data interferes with current execution.
-    """
-    session.query(XCom).filter(
-    XCom.dag_id == dag_run.dag_id,
-    XCom.execution_date == dag_run.execution_date
-    ).delete(synchronize_session=False)
-    session.commit()
-
 
 def create_dag(dag,connection_id,id_dag):
 
-    def get_executor(code):        
+    def get_executor(code):
         module = importlib.import_module(f'models.product.{id_dag}.{code}')
-        class_ = getattr(module, code)    
+        class_ = getattr(module, code)
         return class_()
 
-    def dag_failure_callback(context):         
-        dag_run = context['dag_run']        
-
-        delete_xcoms(dag_run=dag_run)   
+    def dag_failure_callback(context):
+        pass
 
     def _get_product_data(**context):
         ti = context["ti"]
@@ -86,6 +71,7 @@ def create_dag(dag,connection_id,id_dag):
         db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
         with db_conn.connect() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS database"))
+            conn.commit()
         inspector = inspect(db_conn)
         table_exists = inspector.has_table(id_dag, schema='database')
         print("TABLE_EXISTS",table_exists)
@@ -163,7 +149,6 @@ def create_dag(dag,connection_id,id_dag):
             task_id='get_product_data',
             python_callable=_get_product_data,
             dag=dag,
-            provide_context=True,
             on_failure_callback=dag_failure_callback
 
         )
@@ -210,7 +195,7 @@ def create_dag(dag,connection_id,id_dag):
 
         # notify_load_error = PostgresOperator(
         #     task_id="notify_load_error",
-        #     postgres_conn_id=connection_id,
+        #     conn_id=connection_id,
         #     sql="sql/insert_product_status.sql", 
         #     params= {'status':"load_error"},
         #     on_failure_callback=dag_failure_callback
@@ -218,7 +203,7 @@ def create_dag(dag,connection_id,id_dag):
 
         # notify_post_load_error = PostgresOperator(
         #     task_id="notify_post_load_error",
-        #     postgres_conn_id=connection_id,
+        #     conn_id=connection_id,
         #     sql="sql/insert_product_status.sql", 
         #     params= {'status':"post_load_error"},
         #     on_failure_callback=dag_failure_callback
@@ -226,14 +211,14 @@ def create_dag(dag,connection_id,id_dag):
 
         # record_product = PostgresOperator(
         #     task_id="record_product",
-        #     postgres_conn_id=connection_id,
+        #     conn_id=connection_id,
         #     sql="sql/insert_product.sql",
         #     on_failure_callback=dag_failure_callback
         # )
 
         update_database = PostgresOperator(
             task_id="update_database",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/update_database.sql",
             on_failure_callback=dag_failure_callback
         )

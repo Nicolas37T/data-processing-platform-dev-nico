@@ -1,5 +1,4 @@
 from airflow.models import BaseOperator
-from airflow.utils.decorators import apply_defaults
 from pymongo import MongoClient
 import pandas as pd
 from openpyxl import load_workbook
@@ -10,7 +9,6 @@ from airflow.models import Variable
 class MongoFileInsertOperator(BaseOperator):
     template_fields = ('file_paths', 'collection')
 
-    @apply_defaults
     def __init__(self, mongo_conn_id, collection, file_paths, file_type='csv', *args, **kwargs):
         super(MongoFileInsertOperator, self).__init__(*args, **kwargs)
         self.mongo_conn_id = mongo_conn_id

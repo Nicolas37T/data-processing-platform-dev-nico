@@ -3,7 +3,7 @@ import os
 import importlib
 import requests
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator as PostgresOperator
 from operators.select_postgres_operator import SelectPostgresOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 import socket
@@ -20,13 +20,19 @@ _AIRFLOW_API_BASE = os.environ.get("AIRFLOW_API_BASE_URL", "http://airflow-apise
 
 
 def _trigger_dag_via_api(dag_id: str, conf: dict) -> None:
+    username = os.environ.get("_AIRFLOW_WWW_USER_USERNAME", "airflow")
+    password = os.environ.get("_AIRFLOW_WWW_USER_PASSWORD", "airflow")
+    token_resp = requests.post(
+        f"{_AIRFLOW_API_BASE}/auth/token",
+        json={"username": username, "password": password},
+        timeout=30,
+    )
+    token_resp.raise_for_status()
+    token = token_resp.json()["access_token"]
     resp = requests.post(
         f"{_AIRFLOW_API_BASE}/api/v2/dags/{dag_id}/dagRuns",
-        json={"conf": conf},
-        auth=(
-            os.environ.get("_AIRFLOW_WWW_USER_USERNAME", "airflow"),
-            os.environ.get("_AIRFLOW_WWW_USER_PASSWORD", "airflow"),
-        ),
+        json={"conf": conf, "logical_date": None},
+        headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
     if resp.status_code not in (200, 201):
@@ -196,7 +202,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         get_download_data = SelectPostgresOperator(
             task_id='get_download_data',
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/get_download_data.sql",
             params={'file_code': "'" + id_dag + "'"},
             dag=dag)
@@ -213,7 +219,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         notify_url_broken = PostgresOperator(
             task_id="notify_url_broken",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_broken_url.sql",
             params={'file_code': "'" + id_dag + "'"},
         )
@@ -230,21 +236,21 @@ def create_dag(dag, connection_id, id_dag=None):
 
         record_revision_only = PostgresOperator(
             task_id="record_revision_only",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_review.sql",
             params={'id_user': "'1'", 'type': "'Revision Only'"},
         )
 
         notify_success_revision_only = PostgresOperator(
             task_id="notify_success_revision_only",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_custom_dag_run.sql",
             params={'state': "'Successful Revision Only'"}
         )
 
         record_download = PostgresOperator(
             task_id="record_download",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_download.sql",
             params={'id_user': "'1'", 'state': "'Downloaded'", 'type_file': "'last file'"},
             do_xcom_push=True
@@ -252,13 +258,13 @@ def create_dag(dag, connection_id, id_dag=None):
 
         update_file = PostgresOperator(
             task_id="update_file",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/update_file.sql",
         )
 
         notify_success_download = PostgresOperator(
             task_id="notify_success_download",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_custom_dag_run.sql",
             params={'state': "'Successful Donwload'"}
         )

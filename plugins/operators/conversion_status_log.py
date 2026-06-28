@@ -1,7 +1,6 @@
 from airflow.models import Variable
 from airflow.models import BaseOperator
-from airflow.utils.decorators import apply_defaults
-from airflow.hooks.postgres_hook import PostgresHook
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 import json
 import datetime
 
@@ -11,7 +10,6 @@ class ConversionStatusLog(BaseOperator):
     Operador personalizado que accede a una variable definida en Airflow.
     """
 
-    @apply_defaults
     def __init__(self, variable_name, postgres_conn_id, table_name, *args, **kwargs):
         """
         Constructor del operador.

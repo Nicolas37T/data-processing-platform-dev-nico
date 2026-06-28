@@ -345,7 +345,8 @@ def get_xlsx_report_dataframe_full(file_path:str, key_words:str, page_number:int
     return
 
 def convert_win_path(path_win, add_dir=""):
-
+    if not path_win:
+        return None
     path_win = path_win.replace('\\\\','\\')
     path_unix = path_win.replace(ntpath.sep, posixpath.sep)
     path_unix = '//' + '/'.join([i for i in path_unix.split('/') if i])

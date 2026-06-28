@@ -165,15 +165,21 @@ class IA_Tools():
 #         return ai_response
 
 class Datax_Cohere(IA_Tools):
-    api_key = os.getenv('COHERE_API_KEY')
-    cohere_client = cohere.ClientV2(api_key=api_key)
-    
+    _cohere_client = None
+
+    @classmethod
+    def _get_client(cls):
+        if cls._cohere_client is None:
+            api_key = os.getenv('COHERE_API_KEY')
+            cls._cohere_client = cohere.ClientV2(api_key=api_key)
+        return cls._cohere_client
+
     @classmethod
     def compare_posibilities(self,text:str, posibilities:List[str], model='command-a-03-2025')->str:
         self.text = text
         self.posibilities = posibilities
 
-        response = self.cohere_client.chat(
+        response = self._get_client().chat(
         model=model,
         messages=[{"role": "user", "content": self.get_compare_prompt()}],
         temperature=0.7
@@ -194,7 +200,7 @@ class Datax_Cohere(IA_Tools):
             text = text.lower()
             lower_posibilities = [posibility.lower() for posibility in posibilities]
 
-            response = self.cohere_client.embed(
+            response = self._get_client().embed(
                 texts= [text] + lower_posibilities,
                 model=model,
                 input_type='search_query',  # para comparación de textos/palabras
@@ -217,7 +223,7 @@ class Datax_Cohere(IA_Tools):
         self.text = text
         print(f'NEW TEXT:{text}')        
 
-        response = self.cohere_client.chat(
+        response = self._get_client().chat(
         model=model,
         messages=[{"role": "user", "content": self.get_insert_new_text_prompt()}],
         temperature=0.2

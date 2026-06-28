@@ -10,7 +10,7 @@ import sqlite3
 import xml.etree.ElementTree as ET
 import pandas as pd
 import numpy as np
-from sqlalchemy import MetaData, Table, Column, Integer, String, DateTime
+from sqlalchemy import MetaData, Table, Column, Integer, String, DateTime, text
 from rapidfuzz import fuzz
 from models.conversion.tools.conversion_tools import verify_frecuency, verify_levels, verify_values
 from models.download.tools.download_tools import createDirectoryStruct, format_date
@@ -175,6 +175,11 @@ class Conversion_Base():
         if not new_replacements_df.empty:
             new_replacements_df['created_at'] = dag_run_date
             if not table_exists:
+                # Ensure schema exists before creating the table
+                with db_aux_conn.connect() as conn:
+                    conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{replacement_table_schema}"'))
+                    conn.commit()
+
                 # Create the replacement table if it doesn't exist
                 metadata = MetaData(schema=replacement_table_schema)
 
@@ -205,6 +210,10 @@ class Conversion_Base():
             str: Returns 'no_updates' if the latest date in the DataFrame is not after the specified date.
             None: Returns None if the latest date is after the specified date.
         """
+        # No previous conversion — always treat as new data
+        if converted_to is None:
+            return None
+
         # Convert 'converted_to' to datetime if it is a string
         converted_to = format_date(date=converted_to) if isinstance(converted_to,str) else converted_to
 
@@ -238,6 +247,10 @@ class Conversion_Base():
         Returns:
             str: Returns the data file path if the structure is verified successfully, or an empty string if an error occurs.
         """
+        # No previous conversion to compare against — always pass on first run
+        if not last_conversion_path:
+            return data_file
+
         try:
             # Load the data into DataFrames
             data_df = self.get_last_conversion_df(last_conversion_path=data_file,table_name=self.__class__.__name__)
@@ -339,9 +352,8 @@ class Conversion_Base():
             date = date.strftime(format)
 
             # Validate the data results (e.g., totals mismatch)
-            result = self.validate_data_results(dataframe=combined_df, decimal_separator=decimal_separator)
-            totals_mismatch = result[0] 
-            validated_df = result[1]
+            totals_mismatch = self.validate_data_results(dataframe=combined_df, decimal_separator=decimal_separator)
+            validated_df = combined_df
 
             # Merge all replacement DataFrames and calculate similarity between the original and final values
             replaces_df_merged = pd.concat(replaces_dataframes, ignore_index=True).drop_duplicates()
@@ -368,13 +380,16 @@ class Conversion_Base():
 
             # Handle file saving based on the selected file extension
             if file_extension == 'sqlite':
-                columns_to_review_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path, table_name='columns_to_review')
-                
+                columns_to_review_df = pd.DataFrame()
+                if last_conversion_path:
+                    columns_to_review_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path, table_name='columns_to_review')
+
                 # Create SQLite connection and save DataFrames to the database
                 connection = sqlite3.connect(result_file_path)
                 validated_df.to_sql(code, connection, if_exists='replace', index=False)
                 replaces_df_merged.to_sql('replaces_table', connection, if_exists='replace', index=False)
-                columns_to_review_df.to_sql('columns_to_review', connection, if_exists='replace', index=False)
+                if not columns_to_review_df.empty:
+                    columns_to_review_df.to_sql('columns_to_review', connection, if_exists='replace', index=False)
             
             elif file_extension == 'xlsx':                
                 validated_df.to_excel(result_file_path, index=False)

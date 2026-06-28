@@ -7,7 +7,7 @@ import requests
 sys.path.append('/opt/airflow')
 from sqlalchemy import create_engine, inspect, text
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator as PostgresOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from models.conversion.tools.conversion_tools import convert_win_path
 from models.conversion.tools.text_normalization import Text_Normalization
@@ -24,13 +24,19 @@ _DATA_DB_PASSWORD = os.environ.get("DATA_DB_PASSWORD", "datax")
 
 
 def _trigger_dag_via_api(dag_id: str, conf: dict) -> None:
+    username = os.environ.get("_AIRFLOW_WWW_USER_USERNAME", "airflow")
+    password = os.environ.get("_AIRFLOW_WWW_USER_PASSWORD", "airflow")
+    token_resp = requests.post(
+        f"{_AIRFLOW_API_BASE}/auth/token",
+        json={"username": username, "password": password},
+        timeout=30,
+    )
+    token_resp.raise_for_status()
+    token = token_resp.json()["access_token"]
     resp = requests.post(
         f"{_AIRFLOW_API_BASE}/api/v2/dags/{dag_id}/dagRuns",
-        json={"conf": conf},
-        auth=(
-            os.environ.get("_AIRFLOW_WWW_USER_USERNAME", "airflow"),
-            os.environ.get("_AIRFLOW_WWW_USER_PASSWORD", "airflow"),
-        ),
+        json={"conf": conf, "logical_date": None},
+        headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
     if resp.status_code not in (200, 201):
@@ -104,6 +110,7 @@ def create_dag(dag, connection_id, id_dag=None):
         db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
         with db_conn.connect() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {storage_table[0]}"))
+            conn.commit()
         inspector = inspect(db_conn)
         table_exists = inspector.has_table(storage_table[1], schema=storage_table[0])
         print("TABLE_EXISTS", table_exists)
@@ -118,6 +125,7 @@ def create_dag(dag, connection_id, id_dag=None):
             sql_query = sql_query % (storage_table[0], storage_table[1], storage_table[0], storage_table[1])
             with db_conn.connect() as connection:
                 connection.execute(text(sql_query))
+                connection.commit()
 
         table_dates = executor.get_table_dates(table_path=conversion_path)
         backup_db, num_records_before = executor.pre_load(db_conn=db_conn, storage_table_name=storage_table[1], storage_table_schema=storage_table[0], load_scope=load_scope, load_dates=table_dates)
@@ -238,7 +246,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         notify_load_error = PostgresOperator(
             task_id="notify_load_error",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_migration_status.sql",
             params={'status': "load_error"},
             on_failure_callback=dag_failure_callback
@@ -246,7 +254,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         notify_post_load_error = PostgresOperator(
             task_id="notify_post_load_error",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_migration_status.sql",
             params={'status': "post_load_error"},
             on_failure_callback=dag_failure_callback
@@ -254,14 +262,14 @@ def create_dag(dag, connection_id, id_dag=None):
 
         record_migration = PostgresOperator(
             task_id="record_migration",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_migration.sql",
             on_failure_callback=dag_failure_callback
         )
 
         update_report = PostgresOperator(
             task_id="update_report",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/update_report.sql",
             on_failure_callback=dag_failure_callback
         )

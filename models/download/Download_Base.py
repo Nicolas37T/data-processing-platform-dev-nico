@@ -302,7 +302,10 @@ class Download_Base():
             if ALL:
                 files_to_store = os.listdir(tmp_path)
                 
-            else :
+            elif not last_file_path or not os.path.exists(last_file_path):
+                # No previous download path — treat as first run, store everything
+                files_to_store = os.listdir(tmp_path)
+            else:
                 # Get list of last files and group them by file code
                 last_files = os.listdir(last_file_path)
                 last_files_dict = defaultdict(list)

@@ -15,22 +15,49 @@ process_dict = {
     'download': {
         'db_table': 'file',
         'prefix': 'D',
-        'sql_query': 'SELECT code, download_type, schedule_interval FROM file WHERE 1=1',
+        'sql_query': (
+            'SELECT f.code, f.download_type, f.schedule_interval, '
+            's.short_name, s.name AS source_name '
+            'FROM file f '
+            'JOIN source s ON f.id_source = s.id_source '
+            'WHERE 1=1'
+        ),
     },
     'conversion': {
         'db_table': 'report',
         'prefix': 'C',
-        'sql_query': 'SELECT code FROM report WHERE "isActive" = TRUE',
+        'sql_query': (
+            'SELECT r.code, s.short_name, s.name AS source_name '
+            'FROM report r '
+            'JOIN file f ON r.id_file = f.id_file '
+            'JOIN source s ON f.id_source = s.id_source '
+            'WHERE r."isActive" = TRUE'
+        ),
     },
     'migration': {
         'db_table': 'report',
         'prefix': 'M',
-        'sql_query': 'SELECT code FROM report WHERE "isActive" = TRUE',
+        'sql_query': (
+            'SELECT r.code, s.short_name, s.name AS source_name '
+            'FROM report r '
+            'JOIN file f ON r.id_file = f.id_file '
+            'JOIN source s ON f.id_source = s.id_source '
+            'WHERE r."isActive" = TRUE'
+        ),
     },
     'product': {
         'db_table': 'data_base',
         'prefix': 'DB',
-        'sql_query': 'SELECT db_code AS code FROM data_base WHERE 1=1',
+        'sql_query': (
+            'SELECT DISTINCT ON (db.db_code) db.db_code AS code, '
+            's.short_name, s.name AS source_name '
+            'FROM data_base db '
+            'JOIN data_base_report dbr ON db.db_code = dbr.db_code '
+            'JOIN report r ON dbr.report_code = r.code '
+            'JOIN file f ON r.id_file = f.id_file '
+            'JOIN source s ON f.id_source = s.id_source '
+            'ORDER BY db.db_code, s.short_name'
+        ),
     },
 }
 
@@ -163,6 +190,10 @@ class RobotCodeHandler:
         country_mask = df['code'].apply(lambda x: x.split('_')[1] == country)
         df = df.loc[country_mask]
 
+        # Transform before filtering so user codes (C_BO_* / M_BO_*) match DB values
+        df['code'] = df['code'].apply(lambda x: "_".join([prefix] + x.split('_')[1:3]))
+        df = df.drop_duplicates()
+
         if isinstance(codes_input, list):
             select_mask = df['code'].isin(codes_input)
             df = df.loc[select_mask]
@@ -170,9 +201,6 @@ class RobotCodeHandler:
         if df.empty:
             info_print("No codes found for the selected process and country.")
             return
-
-        df['code'] = df['code'].apply(lambda x: "_".join([prefix] + x.split('_')[1:3]))
-        df = df.drop_duplicates()
         df['file_path'] = df['code'].apply(lambda x: self._build_model_path(code=x))
 
         self.robots = df.to_dict(orient='records')
@@ -202,9 +230,12 @@ class RobotCodeHandler:
             else:
                 template = self.process
 
+            short_name = robot.get('short_name') or ''
+            tags_str = f"'{short_name}', '{self.process.capitalize()}'"
+
             for line in fileinput.input(robot_file_path, inplace=True):
                 line = line.replace("dag-id", "'" + robot['code'] + "'")
-                line = line.replace("tagsToReplace", "'" + self.process.capitalize() + "'")
+                line = line.replace("tagsToReplace", tags_str)
                 line = line.replace("connection-id", "'" + self.DATA_BASE + "'")
                 line = line.replace("dag-template", f"{template}_template")
                 if self.process == 'download':

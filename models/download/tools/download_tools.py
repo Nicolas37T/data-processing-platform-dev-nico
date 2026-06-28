@@ -519,6 +519,8 @@ def search_key_words(text,key_word):
 
 # convert a windows path to a linux path
 def convert_win_path(path_win, add_dir=""):
+    if not path_win:
+        return None
     path_unix = path_win.replace (ntpath.sep, posixpath.sep)
     #path_unix = path_unix.replace("//10.0.0.9/spim/","/media/spim_1/")+add_dir
     #path_unix = path_unix.replace("//10.0.0.9/SPIM/","/media/spim_1/")+add_dir

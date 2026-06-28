@@ -10,7 +10,7 @@ import requests
 sys.path.append('/opt/airflow')
 from sqlalchemy import create_engine, inspect, text
 from airflow.providers.standard.operators.python import PythonOperator, BranchPythonOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator as PostgresOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.providers.mongo.hooks.mongo import MongoHook
 from models.conversion.tools.conversion_tools import organize_and_copy_files_by_status, insert_metadata, convert_win_path, convert_unix_path
@@ -28,13 +28,19 @@ _DATA_DB_PASSWORD = os.environ.get("DATA_DB_PASSWORD", "datax")
 
 
 def _trigger_dag_via_api(dag_id: str, conf: dict) -> None:
+    username = os.environ.get("_AIRFLOW_WWW_USER_USERNAME", "airflow")
+    password = os.environ.get("_AIRFLOW_WWW_USER_PASSWORD", "airflow")
+    token_resp = requests.post(
+        f"{_AIRFLOW_API_BASE}/auth/token",
+        json={"username": username, "password": password},
+        timeout=30,
+    )
+    token_resp.raise_for_status()
+    token = token_resp.json()["access_token"]
     resp = requests.post(
         f"{_AIRFLOW_API_BASE}/api/v2/dags/{dag_id}/dagRuns",
-        json={"conf": conf},
-        auth=(
-            os.environ.get("_AIRFLOW_WWW_USER_USERNAME", "airflow"),
-            os.environ.get("_AIRFLOW_WWW_USER_PASSWORD", "airflow"),
-        ),
+        json={"conf": conf, "logical_date": None},
+        headers={"Authorization": f"Bearer {token}"},
         timeout=30,
     )
     if resp.status_code not in (200, 201):
@@ -110,7 +116,8 @@ def create_dag(dag, connection_id, id_dag=None):
         ti.xcom_push(key='key_words', value=report["key_words"])
         ti.xcom_push(key='last_conversion_path', value=last_conversion_path)
         ti.xcom_push(key='code', value=report["code"])
-        ti.xcom_push(key='converted_to', value=report["converted_to"].strftime('%Y-%m-%d'))
+        converted_to = report["converted_to"]
+        ti.xcom_push(key='converted_to', value=converted_to.strftime('%Y-%m-%d') if converted_to else None)
         ti.xcom_push(key='tmp_path', value=tmp_path)
         ti.xcom_push(key='file_code', value=report["file_code"])
         ti.xcom_push(key='id_report', value=report["id_report"])
@@ -196,6 +203,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         with db_conn.connect() as conn:
             conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {replacement_table[0]}"))
+            conn.commit()
         inspector = inspect(db_conn)
         table_exists = inspector.has_table(replacement_table[1], schema=replacement_table[0])
 
@@ -265,7 +273,7 @@ def create_dag(dag, connection_id, id_dag=None):
             return 'report_data_validation'
 
     def _report_data_validation(ti):
-        mongo_hook = MongoHook(conn_id="mongo_db")
+        mongo_hook = MongoHook(mongo_conn_id="mongo_db")
         client = mongo_hook.get_conn()
         reviewed_files = ti.xcom_pull(key='reviewed_files', task_ids='structure_review')
         reviewed_files = [f for f in reviewed_files if f["status"] == 'successful_conversion']
@@ -337,7 +345,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         notify_corrupt_file = PostgresOperator(
             task_id="notify_corrupt_file",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_conversion_status.sql",
             params={'task': "read_file", 'key': "corrupted_files_path"},
             on_failure_callback=dag_failure_callback,
@@ -346,7 +354,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         notify_extraction_error = PostgresOperator(
             task_id="notify_extraction_error",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_conversion_status.sql",
             params={'task': "extraction", 'key': "corrupted_files_path"},
             on_failure_callback=dag_failure_callback,
@@ -355,7 +363,7 @@ def create_dag(dag, connection_id, id_dag=None):
 
         notify_structure_change = PostgresOperator(
             task_id="notify_structure_change",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_conversion_status.sql",
             params={'task': "structure_review", 'key': "corrupted_files_path"},
             on_failure_callback=dag_failure_callback,
@@ -364,14 +372,14 @@ def create_dag(dag, connection_id, id_dag=None):
 
         record_conversion = PostgresOperator(
             task_id="record_conversion",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/insert_conversion.sql",
             on_failure_callback=dag_failure_callback
         )
 
         update_report = PostgresOperator(
             task_id="update_report",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/update_report.sql",
             on_failure_callback=dag_failure_callback
         )

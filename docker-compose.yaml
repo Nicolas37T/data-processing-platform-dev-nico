@@ -39,20 +39,22 @@ x-airflow-common:
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
     # Airflow connection auto-registered via env var (platform metadata DB)
-    AIRFLOW_CONN_PLATFORM_DB: "postgresql://postgres:datax@postgres:5432/platform_db"
+    AIRFLOW_CONN_PLATFORM_DB: "postgresql://${BUSINESS_DB_USER:-postgres}:${BUSINESS_DB_PASSWORD:-datax}@${BUSINESS_DB_HOST:-postgres}:${BUSINESS_DB_PORT:-5432}/${BUSINESS_DB_DATABASE:-platform_db}"
     # Country code for this deployment (set in .env: COUNTRY=PE)
     COUNTRY: "${COUNTRY:-XX}"
     # Business metadata database (used by include/main-generate.py)
-    BUSINESS_DB_HOST: "postgres"
-    BUSINESS_DB_PORT: "5432"
-    BUSINESS_DB_USER: "postgres"
-    BUSINESS_DB_PASSWORD: "datax"
-    BUSINESS_DB_DATABASE: "platform_db"
+    BUSINESS_DB_HOST: "${BUSINESS_DB_HOST:-postgres}"
+    BUSINESS_DB_PORT: "${BUSINESS_DB_PORT:-5432}"
+    BUSINESS_DB_USER: "${BUSINESS_DB_USER:-postgres}"
+    BUSINESS_DB_PASSWORD: "${BUSINESS_DB_PASSWORD:-datax}"
+    BUSINESS_DB_DATABASE: "${BUSINESS_DB_DATABASE:-platform_db}"
     # Data warehouse database (used by migration / conversion / product templates)
-    DATA_DB_HOST: "postgres"
-    DATA_DB_PORT: "5432"
-    DATA_DB_USER: "postgres"
-    DATA_DB_PASSWORD: "datax"
+    DATA_DB_HOST: "${DATA_DB_HOST:-postgres}"
+    DATA_DB_PORT: "${DATA_DB_PORT:-5432}"
+    DATA_DB_USER: "${DATA_DB_USER:-postgres}"
+    DATA_DB_PASSWORD: "${DATA_DB_PASSWORD:-datax}"
+    # AI / text normalization
+    COHERE_API_KEY: "${COHERE_API_KEY:-}"
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/dags:/opt/airflow/dags
     - ${AIRFLOW_PROJ_DIR:-.}/models:/opt/airflow/models
@@ -60,8 +62,8 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
     - ${AIRFLOW_PROJ_DIR:-.}/config:/opt/airflow/config
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
-    - ${AIRFLOW_PROJ_DIR:-.}/local_downloads:/media/spim_10009
-    - ${AIRFLOW_PROJ_DIR:-.}/local_downloads:/media/datax/Local_Disk_B/spim
+    - ${AIRFLOW_PROJ_DIR:-.}/data/${COUNTRY:-XX}/downloads:/data/downloads
+    - ${AIRFLOW_PROJ_DIR:-.}/data/${COUNTRY:-XX}/process:/data/process
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on
@@ -73,6 +75,8 @@ x-airflow-common:
 services:
   postgres:
     image: postgres:16
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: datax
@@ -83,7 +87,7 @@ services:
       - postgres-db-volume:/var/lib/postgresql/data
       # Init scripts run once on first start (empty data volume)
       - ./docker/init-db.sh:/docker-entrypoint-initdb.d/01-init-db.sh
-      - ./docker/platform_db.sql:/docker-entrypoint-initdb.d/platform_db.sql
+      - ./docker/platform_db.sql:/docker-platform-sql/platform_db.sql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
       interval: 10s

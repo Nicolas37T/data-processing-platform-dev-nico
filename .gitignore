@@ -24,8 +24,10 @@ __pycache__/
 # Ignore any sensitive or generated files
 *.env
 
-# Ignore all local downloads
-/local_downloads/
+# Data directory — downloaded files, SQLite/Excel outputs, processed data
+data/
+local_downloads/
+local_data_process/
 
 # Airflow config
 airflow.cfg

@@ -1,9 +1,11 @@
 from airflow import DAG
 from airflow.models import XCom
 from airflow.operators.python import PythonOperator
-from airflow.utils.dates import days_ago
+from datetime import datetime, timedelta, timezone
+
+def days_ago(n):
+    return datetime.now(tz=timezone.utc) - timedelta(days=n)
 from airflow.utils.session import provide_session
-from datetime import datetime, timedelta
 import os
 import time
 

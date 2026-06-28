@@ -1,7 +1,6 @@
 import logging
-from airflow.hooks.postgres_hook import PostgresHook
+from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.models import BaseOperator
-from airflow.utils.decorators import apply_defaults
 
 
 class SelectPostgresOperator(BaseOperator):
@@ -20,16 +19,15 @@ class SelectPostgresOperator(BaseOperator):
     template_ext = ('.sql',)
     ui_color = '#ededed'
 
-    @apply_defaults
     def __init__(
             self, sql,
-            postgres_conn_id='select_postgres_default', autocommit=False,
+            conn_id='select_postgres_default', autocommit=False,
             parameters=None,
             *args, **kwargs):
         super(SelectPostgresOperator, self).__init__(*args, **kwargs)
         self.sql = sql
-        self.postgres_conn_id = postgres_conn_id
-        self.hook = PostgresHook(postgres_conn_id=self.postgres_conn_id)
+        self.conn_id = conn_id
+        self.hook = PostgresHook(postgres_conn_id=self.conn_id)
         self.autocommit = autocommit
         self.parameters = parameters
 

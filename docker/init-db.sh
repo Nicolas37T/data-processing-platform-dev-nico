@@ -13,6 +13,6 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
 EOSQL
 
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "platform_db" \
-    -f /docker-entrypoint-initdb.d/platform_db.sql
+    -f /docker-platform-sql/platform_db.sql
 
 echo "=== Business databases ready ==="

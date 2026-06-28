@@ -57,7 +57,7 @@ En **macOS / Windows con Docker Desktop** no es necesario.
 ### 3. Crear los directorios necesarios
 
 ```bash
-mkdir -p logs config local_downloads
+mkdir -p logs config data
 ```
 
 ### 4. Construir la imagen Docker
@@ -149,27 +149,37 @@ Los DAGs generados aparecen automáticamente en la UI de Airflow en unos segundo
 
 ```
 .
+├── data/                      # Datos del despliegue (ignorados por git)
+│   └── {COUNTRY}/             # Subcarpeta por código de país (ej. BO/, PE/)
+│       ├── downloads/         # Archivos descargados de las fuentes
+│       └── process/           # Archivos procesados (SQLite, Excel de conversión)
 ├── dags/
-│   ├── download/          # DAGs concretos de descarga (D_XX_*.py)
-│   ├── templates/         # Templates reutilizables por tipo de DAG
+│   ├── download/              # DAGs concretos de descarga (D_XX_*.py)
+│   ├── conversion/            # DAGs de conversión (C_XX_*.py)
+│   ├── migration/             # DAGs de migración (M_XX_*.py)
+│   ├── product/               # DAGs de producto (DB_XX_*.py)
+│   ├── templates/             # Templates reutilizables por tipo de DAG
 │   └── log_cleaner.py
 ├── models/
-│   ├── download/          # Clases de descarga por fuente
-│   ├── conversion/        # Clases de conversión por reporte
-│   ├── migration/         # Clases de migración por reporte
-│   └── product/           # Clases de producto
+│   ├── download/              # Clases de descarga por fuente
+│   ├── conversion/            # Clases de conversión por reporte
+│   ├── migration/             # Clases de migración por reporte
+│   └── product/               # Clases de producto
 ├── plugins/
-│   └── operators/         # Operadores Airflow custom
+│   └── operators/             # Operadores Airflow custom
 ├── include/
-│   └── main-generate.py   # Generador de DAGs por consola
+│   └── main-generate.py       # Generador de DAGs por consola
 ├── docker/
-│   ├── init-db.sh         # Script de inicialización de bases de datos
-│   └── platform_db.sql    # DDL completo de platform_db
-├── .env.example           # Plantilla de variables de entorno
-├── Dockerfile             # Imagen custom basada en airflow:3.2.2
-├── docker-compose.yaml    # Orquestación local con CeleryExecutor
-└── requirements.txt       # Dependencias Python
+│   ├── init-db.sh             # Script de inicialización de bases de datos
+│   ├── platform_db.sql        # DDL completo de platform_db
+│   └── seed_test_{COUNTRY}.sql # (Opcional) Seed de datos de prueba
+├── .env.example               # Plantilla de variables de entorno
+├── Dockerfile                 # Imagen custom basada en airflow:3.2.2
+├── docker-compose.yaml        # Orquestación local con CeleryExecutor
+└── requirements.txt           # Dependencias Python
 ```
+
+> La carpeta `data/{COUNTRY}/` es creada automáticamente por Docker al montar los volúmenes. Los contenidos se persisten en el host — no se pierden al reiniciar los contenedores. El directorio `data/` está en `.gitignore` para que los archivos descargados y procesados no se suban al repositorio.
 
 ---
 
@@ -186,6 +196,19 @@ Los DAGs generados aparecen automáticamente en la UI de Airflow en unos segundo
 Credenciales internas (entre contenedores):
 - PostgreSQL: `postgres` / `datax`
 - MongoDB: `airflow` / `airflow`
+
+---
+
+## Rutas internas de datos
+
+Dentro de los contenedores Airflow, los datos se almacenan en:
+
+| Ruta interna | Host (relativa al proyecto) | Propósito |
+|---|---|---|
+| `/data/downloads/` | `./data/{COUNTRY}/downloads/` | Archivos descargados por el DAG de Descarga |
+| `/data/process/` | `./data/{COUNTRY}/process/` | SQLite + Excel generados por el DAG de Conversión |
+
+Usa estas rutas al registrar `file.path` y `report.path` en `platform_db`.
 
 ---
 
@@ -237,7 +260,7 @@ docker compose exec airflow-worker bash -c "cd ~/platform_project/dbt/product &&
 docker compose logs -f airflow-worker
 
 # Ejecutar un DAG manualmente desde la CLI
-docker compose exec airflow-apiserver airflow dags trigger D_PE_000000001
+docker compose exec airflow-apiserver airflow dags trigger D_BO_000000001
 
 # Reiniciar solo el scheduler (sin reconstruir)
 docker compose restart airflow-scheduler

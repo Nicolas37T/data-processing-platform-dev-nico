@@ -5,7 +5,7 @@ sys.path.append('/home/datax/platform_project')
 from sqlalchemy import create_engine
 from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
-from airflow.providers.postgres.operators.postgres import PostgresOperator
+from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator as PostgresOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from models.product.tools.product_tools import get_free_date
 from models.product.Product_Base import Product_Base
@@ -83,7 +83,6 @@ def create_dag(dag,connection_id,id_dag):
             task_id='get_product_data',
             python_callable=_get_product_data,
             dag=dag,
-            provide_context=True            
         )        
 
         load = BashOperator(
@@ -102,7 +101,7 @@ def create_dag(dag,connection_id,id_dag):
 
         update_database = PostgresOperator(
             task_id="update_database",
-            postgres_conn_id=connection_id,
+            conn_id=connection_id,
             sql="sql/update_database.sql"
         )
 
