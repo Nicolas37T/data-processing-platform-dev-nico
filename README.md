@@ -97,7 +97,7 @@ Servicios que se levantan:
 
 | Servicio | Puerto | Descripción |
 |----------|--------|-------------|
-| `postgres` | — | PostgreSQL 16 (Airflow + bases de negocio) |
+| `postgres` | — | PostgreSQL 17 (Airflow + bases de negocio) |
 | `mongo` | — | MongoDB 7 (raw data de conversión) |
 | `redis` | 6379 | Broker Celery |
 | `airflow-apiserver` | **8080** | UI y API REST de Airflow |

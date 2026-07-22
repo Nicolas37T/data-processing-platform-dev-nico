@@ -16,7 +16,7 @@
 # under the License.
 #
 
-# Airflow 3.2.2 — CeleryExecutor con Redis y PostgreSQL 16
+# Airflow 3.2.2 — CeleryExecutor con Redis y PostgreSQL 17
 # WARNING: Esta configuración es para desarrollo local.
 ---
 x-airflow-common:
@@ -74,7 +74,7 @@ x-airflow-common:
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:17
     ports:
       - "5433:5432"
     environment:

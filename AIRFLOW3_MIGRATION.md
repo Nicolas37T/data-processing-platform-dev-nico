@@ -14,7 +14,7 @@ This document records all breaking-change fixes applied when upgrading from **Ap
 - `airflow-webserver` renamed to `airflow-apiserver` with command `api-server`
 - Healthcheck updated to `/api/v2/monitor/health`
 - New mandatory service `airflow-dag-processor` (command `dag-processor`) — required in Airflow 3 because the DAG processor was separated from the scheduler
-- PostgreSQL upgraded: `postgres:13` → `postgres:16`
+- PostgreSQL upgraded: `postgres:13` → `postgres:17`
 - New env vars:
   - `AIRFLOW__CORE__AUTH_MANAGER` — FAB auth manager now requires explicit declaration
   - `AIRFLOW__CORE__EXECUTION_API_SERVER_URL` — worker-to-apiserver communication endpoint
