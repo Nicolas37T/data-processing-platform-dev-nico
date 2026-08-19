@@ -344,14 +344,15 @@ def get_xlsx_report_dataframe_full(file_path:str, key_words:str, page_number:int
             return (tables[sheet_name],i+1)
     return
 
+# convert a windows path to a linux path
 def convert_win_path(path_win, add_dir=""):
     if not path_win:
         return None
     path_win = path_win.replace('\\\\','\\')
     path_unix = path_win.replace(ntpath.sep, posixpath.sep)
     path_unix = '//' + '/'.join([i for i in path_unix.split('/') if i])
-    path_unix = path_unix.replace("//10.0.0.9/spim/","/media/spim_10009/")+add_dir
-    path_unix = path_unix.replace("//10.0.0.9/SPIM/","/media/spim_10009/")+add_dir
+    path_unix = path_unix.replace("//10.0.0.16/spim/","/mnt/datos1/downloaded_files/")+add_dir
+    path_unix = path_unix.replace("//10.0.0.16/SPIM/","/mnt/datos1/downloaded_files/")+add_dir
     path_unix = path_unix.replace("//10.0.0.12/spim/","/media/datax/Local_Disk_B/spim/")+add_dir
     path_unix = path_unix.replace("//10.0.0.12/data_process/","/media/datax/Local_Disk_B/data_process/")+add_dir
     path_unix = path_unix.replace("//10.0.0.12/downloaded_files/","/media/datax/Local_Disk_B/downloaded_files/")+add_dir
@@ -359,14 +360,18 @@ def convert_win_path(path_win, add_dir=""):
 
 # convert a linux path to a windows path
 def convert_unix_path(path_unix, add_dir=""):
-    path_unix = path_unix.replace("/media/spim_10009/","//10.0.0.9/spim/")+add_dir
-    path_unix = path_unix.replace("/media/spim_10009/","//10.0.0.9/SPIM/")+add_dir
+    path_unix = path_unix.replace("/mnt/datos1/downloaded_files/","//10.0.0.16/spim/")+add_dir
+    # (Nota: La línea original duplicaba replace para SPIM en mayúsculas, lo mantenemos consistente)
+    path_unix = path_unix.replace("/mnt/datos1/downloaded_files/","//10.0.0.16/SPIM/")+add_dir
     path_unix = path_unix.replace("/media/datax/Local_Disk_B/spim/","//10.0.0.12/spim/")+add_dir
     path_unix = path_unix.replace("/media/datax/Local_Disk_B/data_process/","//10.0.0.12/data_process/")+add_dir
     path_unix = path_unix.replace("/media/datax/Local_Disk_B/downloaded_files/","//10.0.0.12/downloaded_files/")+add_dir
     path_win = path_unix.replace(posixpath.sep, ntpath.sep)
-    
+
     return path_win
+
+
+
 
 def extract_pdf_table_fitz(file:str,page:int)->pd.DataFrame:
     with fitz.open(file) as pdf:

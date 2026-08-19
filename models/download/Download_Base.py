@@ -160,11 +160,17 @@ class Download_Base():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
-            # Erase the previous tmp path and create the a new one 
+            # Erase the previous tmp path and create the a new one
             path = os.path.join(path, 'tmp')
             if os.path.exists(path):
                 shutil.rmtree(path)
-            os.makedirs(path)
+            
+            # Crear directorio y asignar permisos explícitos 777
+            os.makedirs(path, mode=0o777, exist_ok=True)
+            try:
+                os.chmod(path, 0o777)
+            except Exception:
+                pass
 
             for url in urls:
                 print(f"Downloading: {url} ...")
@@ -209,13 +215,12 @@ class Download_Base():
 
                     # Wait for the specified time before the next download
                     time.sleep(wait_time)
-        
+
         # If the list of verified_urls is empty returns NONE
         if not len(file_paths):
             print("Could not download any file")
             return False
         return file_paths
-
 
     def store_files(self,files_dicts, files_name, publication_frequency, path):
         """
@@ -301,7 +306,7 @@ class Download_Base():
             files_to_store = []
             if ALL:
                 files_to_store = os.listdir(tmp_path)
-                
+
             elif not last_file_path or not os.path.exists(last_file_path):
                 # No previous download path — treat as first run, store everything
                 files_to_store = os.listdir(tmp_path)
@@ -312,7 +317,7 @@ class Download_Base():
                 for f in last_files:
                     f_name = os.path.splitext(f)[0]
                     f_code = f_name[10:]
-                    last_files_dict[f_code].append(f) 
+                    last_files_dict[f_code].append(f)
 
                 # Process new files in the temporary directory
                 for file in os.listdir(tmp_path):
@@ -331,19 +336,19 @@ class Download_Base():
                     if not is_latest:
                         files_to_store.append(file)
                         continue
-            
+
             # If no new files to store, return an empty list
             if not files_to_store:
                 print("There is no new data to store.")
                 return[]
-            
+
             # Determine the latest date from the new files to store
             if ALL:
                 last_date = datetime.today().strftime(format=format)
             else:
                 last_date = max(files_to_store)[:10]
 
-             # Create directory structure for the new files
+            # Create directory structure for the new files
             new_file_path = createDirectoryStruct(
                 file_date=last_date,
                 base_path=path,
@@ -351,8 +356,12 @@ class Download_Base():
             )
             new_file_path = os.path.join(new_file_path,last_date)
             if not os.path.exists(new_file_path):
-                os.makedirs(new_file_path)
-            
+                os.makedirs(new_file_path, mode=0o777, exist_ok=True)
+                try:
+                    os.chmod(new_file_path, 0o777)
+                except Exception:
+                    pass
+
             # Copy new files to the new directory
             for file in files_to_store:
                 src_path = os.path.join(tmp_path,file)
@@ -371,7 +380,7 @@ class Download_Base():
                 "updated_to": last_date,
                 "datax_file_path": new_file_path
             }]
-        
+
         except Exception as e:
             print(f"An error ocurred: {e}")
             traceback.print_exc()

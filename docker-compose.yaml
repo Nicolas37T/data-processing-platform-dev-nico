@@ -64,6 +64,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ${AIRFLOW_PROJ_DIR:-.}/data/${COUNTRY:-XX}/downloads:/data/downloads
     - ${AIRFLOW_PROJ_DIR:-.}/data/${COUNTRY:-XX}/process:/data/process
+    - /mnt/datos1/downloaded_files:/mnt/datos1/downloaded_files
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
     &airflow-common-depends-on

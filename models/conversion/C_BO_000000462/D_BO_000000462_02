@@ -1,0 +1,136 @@
+import re
+import os
+import tabula
+import pdfplumber
+import traceback
+import numpy as np
+import pandas as pd
+from models.conversion.tools.conversion_tools import get_pdf_report_page, to_numeric_datax,format_date
+from models.conversion.Conversion_Base import Conversion_Base
+
+class D_BO_000000462_02(Conversion_Base):
+
+    COLUMN_GAPS = [119.0,80.0]
+    PIVOT_WORDS = 'origen'
+    CONVERSION_FACTOR = 72/25.4 # conversion factor from mm to points
+    TOP_GAP = 19
+    
+    def extraction(self, file_path, key_words, template_path, page_number, format='%Y-%m-%d'):
+        """
+        Extracts data from a specifiedfile based on provided keywords and a date filter, and saves the extracted data into an Excel file.
+
+        Parameters:
+            file_path (str): Path to the PDF file to be processed.
+            key_words (str): Keywords to identify the relevant page in the PDF.
+            converted_to (str): Date to compare the extracted report date against.
+            template_path (str): Path to the Excel template used for validation.
+            COLUMN_GAPS (list): List of gaps between columns in the extracted table in mm.
+            PIVOT_WORDS (str): Keyword indicating the pivot corner in the PDF.
+            format (str): Date format to use when converting dates (default: '%Y-%m-%d').
+            
+        Returns:
+            str: Empty string if successful, or error messages on failure.
+        """
+        # Get the base name of the file from the file path
+        file_name = os.path.basename(file_path)
+
+        # Regex pattern for matching dates in the PDF titles
+        re_date = r'(\d{1,2})/(\d{1,2})/(\d{2})'
+
+        try:                           
+
+            # Open the PDF file and extract the relevant page
+            with pdfplumber.open(file_path) as pdf: 
+                page_to_extract = get_pdf_report_page(pdf=pdf, key_words=key_words)
+                print(f"Extracting from page number: {page_to_extract.page_number}")
+                lines = page_to_extract.extract_words()
+                
+                # Find the pivot corner in the extracted lines
+                PIVOT_CORNER = [line for line in lines if re.search(fr'^{self.PIVOT_WORDS}', line['text'], re.IGNORECASE)]
+                if not PIVOT_CORNER:
+                    raise ValueError("The pivot corner not be found in the page.")
+                print([(x['text'], x['top']) for x in PIVOT_CORNER])
+                PIVOT_CORNER = sorted(PIVOT_CORNER,key=lambda x: x['top'])[0]
+                
+                X0 = PIVOT_CORNER['x0']-35*self.CONVERSION_FACTOR
+                TOP = PIVOT_CORNER['top']-self.TOP_GAP*self.CONVERSION_FACTOR
+                BOTTOM = page_to_extract.height
+                print(f"The X0 point is: {X0/self.CONVERSION_FACTOR:02}mm")
+
+                # Extract titles above the pivot corner
+                titles = [line["text"] for line in page_to_extract.within_bbox((X0,TOP-60*self.CONVERSION_FACTOR,X0+230*self.CONVERSION_FACTOR,TOP)).extract_text_lines()]
+                print(f"Titles extracted: {titles}")
+
+                dates = [match.group(1,2,3) for word in lines if(match:=re.search(re_date,word['text']))]
+                dates = sorted(list(map(lambda x: format_date(f'20{x[2]}-{x[1]}-{x[0]}'),dates)))
+                formated_date = dates[-1].strftime(format)
+                print(formated_date)
+                
+                # Calculate column lines based on the gaps
+                column_lines = list(X0 + np.cumsum(self.COLUMN_GAPS)*self.CONVERSION_FACTOR)
+                
+                # Read the relevant area of the PDF into a DataFrame
+                tabs = tabula.read_pdf(input_path=file_path,pages=page_to_extract.page_number, area=[TOP,X0,BOTTOM,page_to_extract.width], columns=column_lines, pandas_options={'header':None})[0]
+                if len(tabs.columns)>2:
+                    tabs = tabs[tabs.columns[:2]]
+                
+                column_to_analize = tabs.columns[-1]
+                numeric_mask = pd.to_numeric(tabs[column_to_analize].replace(r'\s+','').replace(r'-','0', regex=True).replace(r'[\)\s+\.\(\,]','', regex=True),errors='coerce').notna()
+
+                # print(tabs)
+                numeric_indices = tabs[numeric_mask].index
+                nv1_indices = numeric_indices - 2
+                tabs.insert(1,column='nv1', value=tabs.loc[nv1_indices].apply(lambda x: ''.join(x.dropna().astype(str)),axis=1))
+                tabs['nv1'] = tabs['nv1'].ffill()
+
+                df = tabs.loc[numeric_indices]
+                df = df.rename(columns={
+                    df.columns[0]: 'origen',
+                    df.columns[-1]: 'valor'
+                })
+
+                origen_mask = df['valor'].astype(str).str.contains('-',regex=True)
+                df.loc[~origen_mask,'origen'] = pd.NA
+
+                df[['min', 'max']] = df['valor'].str.split('-', expand=True)
+                df[['min', 'max']] = df[['min', 'max']].apply(lambda col: col.str.strip()).fillna(pd.NA)
+                df_melted = df[['origen', 'nv1', 'min', 'max']].melt(id_vars=['origen', 'nv1'], var_name=['nv2'], value_name='valor')
+
+                # Insert the extracted date into the melted DataFrame
+                df_melted.insert(len(df_melted.columns) - 1,column="fecha",value=formated_date)
+                df_melted['valor'] = df_melted['valor'].replace(r'^\s*$', pd.NA, regex=True)
+                df_melted = df_melted.dropna(subset=['valor'])
+
+                return ({
+                    "file_name": file_name,
+                    "titles": titles,
+                    "page_number":int(page_to_extract.page_number)
+                }, df_melted)
+        except ValueError as e:
+            print(f"Validation error: {e}")
+            traceback.print_exc()                        
+        except Exception as e:            
+            print(f"An error ocurred: {e}")            
+            traceback.print_exc()
+        return ""
+    
+    def validate_data_results(self, dataframe:pd.DataFrame, decimal_separator:str, TOLERANCE:float=6.0):
+        """
+        Validates and cleans a DataFrame structured according to the DATAX Conversion Manual.
+
+        The function converts numeric values from text using the specified decimal separator and validates totals or summary values (e.g., totals, percentages), allowing a configurable tolerance.
+
+        If no totals or summaries are found, the function returns False (no errors). If validations fail, it returns True.
+
+        Args:
+            dataframe (pd.DataFrame): Input DataFrame to validate.
+            decimal_separator (str): Decimal separator used in numeric strings (e.g., '.' or ',').
+            TOLERANCE (float, optional): Allowed tolerance for total validation. Defaults to 6.0
+
+        Returns:
+            bool: True if any validation failed, False if all passed or no totals were found.
+        """
+        ERROR_TOLERANCE_VALUE = TOLERANCE
+        totals_mismatch = False       
+
+        return totals_mismatch

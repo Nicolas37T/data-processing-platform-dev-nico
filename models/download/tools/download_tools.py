@@ -517,16 +517,17 @@ def search_key_words(text,key_word):
                 return False
     return True
 
+
 # convert a windows path to a linux path
 def convert_win_path(path_win, add_dir=""):
     if not path_win:
         return None
     path_unix = path_win.replace (ntpath.sep, posixpath.sep)
-    #path_unix = path_unix.replace("//10.0.0.9/spim/","/media/spim_1/")+add_dir
-    #path_unix = path_unix.replace("//10.0.0.9/SPIM/","/media/spim_1/")+add_dir
     path_unix = path_unix.replace('\\\\','\\')
-    path_unix = path_unix.replace("//10.0.0.9/spim/","/media/spim_10009/")+add_dir
-    path_unix = path_unix.replace("//10.0.0.9/SPIM/","/media/spim_10009/")+add_dir
+    
+    path_unix = path_unix.replace("//10.0.0.16/spim/","/mnt/datos1/downloaded_files/")+add_dir
+    path_unix = path_unix.replace("//10.0.0.16/SPIM/","/mnt/datos1/downloaded_files/")+add_dir
+    
     path_unix = path_unix.replace("//10.0.0.12/spim/","/media/datax/Local_Disk_B/spim/")+add_dir
     path_unix = path_unix.replace("//10.0.0.12/data_process/","/media/datax/Local_Disk_B/data_process/")+add_dir
     path_unix = path_unix.replace("//10.0.0.12/downloaded_files/","/media/datax/Local_Disk_B/downloaded_files/")+add_dir
@@ -535,14 +536,18 @@ def convert_win_path(path_win, add_dir=""):
 # convert a linux path to a windows path
 def convert_unix_path(path_unix, add_dir=""):
     path_win = path_unix.replace(posixpath.sep, ntpath.sep)
-    #path_win = ''.join(path_win)
     path_win = path_win.replace("\\","\\\\")
-    path_win = path_win.replace("\\\\media\\\\spim_10009","\\\\\\\\10.0.0.9\\\\spim")+add_dir
-    path_win = path_win.replace("\\home\\datax-ubuntu\\","\\\\10.0.0.9\\")+add_dir
+    
+    path_win = path_win.replace("\\\\mnt\\\\datos1\\\\downloaded_files","\\\\\\\\10.0.0.16\\\\spim")+add_dir
+    
+    path_win = path_win.replace("\\home\\datax-ubuntu\\","\\\\10.0.0.16\\")+add_dir
     path_win = path_win.replace("\\\\media\\\\datax\\\\Local_Disk_B\\\\spim","\\\\\\\\10.0.0.12\\\\spim")+add_dir
     path_win = path_win.replace("\\\\media\\\\datax\\\\Local_Disk_B\\\\data_process","\\\\\\\\10.0.0.12\\\\data_process")+add_dir
-    path_win = path_win.replace("\\\\media\\\\datax\\\\Local_Disk_B\\\\downloaded_files","\\\\\\\\10.0.0.12\\\\downloaded_files")+add_dir                   
-    return path_win    
+    path_win = path_win.replace("\\\\media\\\\datax\\\\Local_Disk_B\\\\downloaded_files","\\\\\\\\10.0.0.12\\\\downloaded_files")+add_dir
+    return path_win
+
+
+
 
 def get_departamento_abr(dep):
     dep = dep.strip().lower()
@@ -680,3 +685,15 @@ def human_delay(min_sec=2, max_sec=5, rest_probability=0.1):
 
     print(f"Waiting for {wait:.2f} seconds...")
     time.sleep(wait)
+
+import os
+
+# If you already have a function that creates the folder, 
+# just add the os.chmod line after your existing os.makedirs call.
+def create_folder_with_permissions(folder_path):
+    # 1. Create the directory structure if it doesn't exist
+    os.makedirs(folder_path, exist_ok=True)
+    
+    # 2. Force the permissions using os.chmod
+    # Doing this in a separate step bypasses the system's default umask
+    os.chmod(folder_path, 0o777)
