@@ -11,7 +11,26 @@ import shutil
 import warnings
 from datetime import datetime
 from collections import defaultdict
-#sys.path.insert(0, '/home/datax/platform_project/models/download/tools')
+from playwright.sync_api import BrowserType
+
+# ==========================================
+# PARCHE GLOBAL PARA PLAYWRIGHT
+# ==========================================
+
+FORCE_HEADLESS = os.getenv('HEADLESS', 'True').lower() == 'true'
+
+if FORCE_HEADLESS:
+    _original_launch = BrowserType.launch
+    def _patched_launch(self, *args, **kwargs):
+        if 'headless' not in kwargs:
+            kwargs['headless'] = True
+        elif kwargs['headless'] == False:
+            kwargs['headless'] = True
+        return _original_launch(self, *args, **kwargs)
+    
+    BrowserType.launch = _patched_launch
+# ==========================================
+
 from models.download.tools.download_tools import createDirectoryStruct, get_proxy, format_date
 
 class Download_Base():
@@ -369,7 +388,11 @@ class Download_Base():
                 if os.path.isfile(src_path):
                     shutil.copy(src_path,dest_path)
                 elif os.path.isdir(src_path):
-                    for index,f in enumerate(os.listdir(src_path)):
+                    try:
+                        dir_files = os.listdir(src_path)
+                    except Exception:
+                        dir_files = []
+                    for index,f in enumerate(dir_files):
                         shutil.copy(os.path.join(src_path,f),f"{dest_path}_dirfile{index}")
                 else:
                     raise ValueError(f"There is an error with the file: {file}")

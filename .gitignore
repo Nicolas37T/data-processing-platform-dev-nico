@@ -42,6 +42,7 @@ standalone_admin_password.txt
 tmp/
 
 venv/
+.venv/
 
 # Ignore xlsx, sqlite, pdf files
 *xlsx

@@ -1,6 +1,7 @@
 import sys
 import os
-sys.path.append(os.path.expanduser("~"))
+sys.path.append('/opt/airflow')
+sys.path.append('/opt/airflow/dags')
 import pytz
 from datetime import datetime
 from airflow import DAG
@@ -17,10 +18,13 @@ default_args = {'owner': 'datax',
                     'retries': 0
                     }
 
+doc_md = """docMdToReplace"""
+
 dag = DAG(dag-id,
         #schedule= schedule-to-replace,
         default_args=default_args,        
         tags= [tagsToReplace],
+        doc_md=doc_md,
         catchup=False )
 
-create_dag(dag, connection_id=connection-id,id_dag=dag-id)#ALL=True)
+create_dag(dag, connection_id=connection-id,id_dag=dag-id)#ALL=True)

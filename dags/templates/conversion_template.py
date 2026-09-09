@@ -107,8 +107,17 @@ def create_dag(dag, connection_id, id_dag=None):
         tmp_path = os.path.join(path, f'tmp_{uuid.uuid4()}')
         os.makedirs(tmp_path)
 
-        file_downloaded = context['dag_run'].conf.get('file')
-        file_downloaded = convert_win_path(file_downloaded)
+        file_downloaded_raw = context['dag_run'].conf.get('file') or ''
+        splited_file_downloaded = [convert_win_path(f.strip()) for f in file_downloaded_raw.split(';') if f.strip()]
+
+        if not id_download or not splited_file_downloaded:
+            cursor.execute("SELECT d.id_download, d.path FROM download d JOIN report r ON d.id_file = r.id_file WHERE r.code = %s ORDER BY d.id_download DESC LIMIT 1", (report_code,))
+            row_dl = cursor.fetchone()
+            if row_dl:
+                if not id_download:
+                    id_download = row_dl[0]
+                if not splited_file_downloaded and row_dl[1]:
+                    splited_file_downloaded = [convert_win_path(f.strip()) for f in row_dl[1].split(';') if f.strip()]
 
         compare_dates = compare_dates if compare_dates is not None else report["compare_dates"]
 
@@ -130,7 +139,6 @@ def create_dag(dag, connection_id, id_dag=None):
         ti.xcom_push(key='decimal_separator', value=report["decimal_separator"])
         ti.xcom_push(key='id_download', value=id_download)
 
-        splited_file_downloaded = file_downloaded.split(';')
         dirs = [f for f in splited_file_downloaded if os.path.isdir(f)]
         zips = [f for f in splited_file_downloaded if re.search(r'\.zip', f, re.IGNORECASE)]
         downloaded_files = []
@@ -293,6 +301,12 @@ def create_dag(dag, connection_id, id_dag=None):
 
         if converted_file:
             ti.xcom_push(key='converted_file', value=converted_file)
+            try:
+                from templates.dag_metadata_updater import update_dag_tag_and_doc
+                dag_conversion_id = id_dag or '_'.join(code.split('_')[:-1]).replace('D_', 'C_')
+                update_dag_tag_and_doc(dag_conversion_id, 'conversion', converted_file.get('converted_to'))
+            except Exception as e:
+                print(f"Warning: Could not update conversion DAG metadata tag: {e}")
             return 'record_conversion'
 
     def _trigger_dag(ti):

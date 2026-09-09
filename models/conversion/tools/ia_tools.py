@@ -175,21 +175,25 @@ class Datax_Cohere(IA_Tools):
         return cls._cohere_client
 
     @classmethod
-    def compare_posibilities(self,text:str, posibilities:List[str], model='command-a-03-2025')->str:
+    def compare_posibilities(self, text: str, posibilities: List[str], model='command-a-03-2025') -> str:
         self.text = text
         self.posibilities = posibilities
 
-        response = self._get_client().chat(
-        model=model,
-        messages=[{"role": "user", "content": self.get_compare_prompt()}],
-        temperature=0.7
-        )
-        cohere_response = response.message.content[0].text
-        print('TEXTO', text)
-        print(f'OPCIONES: {posibilities}')
-        print("RESPUESTA",cohere_response)
-        time.sleep(2)
-        return cohere_response
+        try:
+            response = self._get_client().chat(
+                model=model,
+                messages=[{"role": "user", "content": self.get_compare_prompt()}],
+                temperature=0.7
+            )
+            cohere_response = response.message.content[0].text
+            print('TEXTO', text)
+            print(f'OPCIONES: {posibilities}')
+            print("RESPUESTA", cohere_response)
+            time.sleep(2)
+            return cohere_response
+        except Exception as e:
+            print(f"Warning: Cohere compare_posibilities error: {e}")
+            return '-'
     
     @classmethod
     def compare_posibilities_embeddings(self,text:str, posibilities:List[str], model='embed-multilingual-v3.0')->str:
@@ -219,15 +223,19 @@ class Datax_Cohere(IA_Tools):
             return '-'
     
     @classmethod
-    def insert_new_text(self,text:str, model='command-a-03-2025')->str:
+    def insert_new_text(self, text: str, model='command-a-03-2025') -> str:
         self.text = text
         print(f'NEW TEXT:{text}')        
 
-        response = self._get_client().chat(
-        model=model,
-        messages=[{"role": "user", "content": self.get_insert_new_text_prompt()}],
-        temperature=0.2
-        )        
-        cohere_response = response.message.content[0].text
+        try:
+            response = self._get_client().chat(
+                model=model,
+                messages=[{"role": "user", "content": self.get_insert_new_text_prompt()}],
+                temperature=0.2
+            )        
+            if response and response.message and response.message.content:
+                return response.message.content[0].text
+        except Exception as e:
+            print(f"Warning: Cohere insert_new_text API error: {e}")
         
-        return cohere_response
+        return self.standardize_text(text=text)

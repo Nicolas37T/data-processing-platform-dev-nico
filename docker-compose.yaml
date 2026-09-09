@@ -43,14 +43,14 @@ x-airflow-common:
     # Country code for this deployment (set in .env: COUNTRY=PE)
     COUNTRY: "${COUNTRY:-XX}"
     # Business metadata database (used by include/main-generate.py)
-    BUSINESS_DB_HOST: "${BUSINESS_DB_HOST:-postgres}"
-    BUSINESS_DB_PORT: "${BUSINESS_DB_PORT:-5432}"
+    BUSINESS_DB_HOST: "${BUSINESS_DB_HOST:-10.0.0.16}"
+    BUSINESS_DB_PORT: "${BUSINESS_DB_PORT:-5434}"
     BUSINESS_DB_USER: "${BUSINESS_DB_USER:-postgres}"
     BUSINESS_DB_PASSWORD: "${BUSINESS_DB_PASSWORD:-datax}"
     BUSINESS_DB_DATABASE: "${BUSINESS_DB_DATABASE:-platform_db}"
-    # Data warehouse database (used by migration / conversion / product templates)
-    DATA_DB_HOST: "${DATA_DB_HOST:-postgres}"
-    DATA_DB_PORT: "${DATA_DB_PORT:-5432}"
+    DATA_DB_HOST: "${DATA_DB_HOST:-10.0.0.16}"
+    DATA_DB_PORT: "${DATA_DB_PORT:-5434}"
+
     DATA_DB_USER: "${DATA_DB_USER:-postgres}"
     DATA_DB_PASSWORD: "${DATA_DB_PASSWORD:-datax}"
     # AI / text normalization

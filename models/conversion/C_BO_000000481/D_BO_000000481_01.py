@@ -1,224 +1,270 @@
-import re
+"""Robot for D_BO_000000481_01 (Fondos de Inversion - Cartera Participantes
+y Tasas de Rendimiento, Bolsa Boliviana de Valores).
+
+The source is the same "Boletin Diario" PDF used by D_BO_000000481. The
+target table starts on ``page_number`` and continues onto the following
+pages as long as they keep repeating the report title (this report spans
+pages 2 and 3).
+"""
 import os
-import tabula
-import pdfplumber
+import re
 import traceback
-import numpy as np
+from datetime import datetime
+
 import pandas as pd
-from models.conversion.tools.conversion_tools import search_key_words, get_pdf_report_page, isLevel, to_numeric_datax
-from models.download.tools.download_tools import format_date, month_abr_to_number, month_to_number
+import pdfplumber
+
 from models.conversion.Conversion_Base import Conversion_Base
+from models.conversion.tools.conversion_tools import (
+    get_col_date,
+    get_pdf_report_page,
+    search_key_words,
+    to_numeric_datax,
+)
+
 
 class D_BO_000000481_01(Conversion_Base):
-
-    CONVERSION_FACTOR = 72/25.4 # conversion factor from mm to points
-    PIVOT_WORDS = 'fondo inversion'
-    COLUMN_GAPS = [38.8,6,6.7,13.3,13.1,9.1,10.8,11,11.6,11.7,10.2,10.4]
-    TOP_GAP = 10
+    """Robot for D_BO_000000481_01 (Cartera Participantes y Tasas de Rendimiento, BBV)."""
 
     def extraction(self, file_path, key_words, template_path, page_number, format='%Y-%m-%d'):
         """
-        Extracts data from a specifiedfile based on provided keywords and a date filter, and saves the extracted data into an Excel file.
+        Extract the "Fondos de Inversion" hierarchical table and normalize it.
 
-        Parameters:
-            file_path (str): Path to the PDF file to be processed.
-            key_words (str): Keywords to identify the relevant page in the PDF.
-            converted_to (str): Date to compare the extracted report date against.
-            template_path (str): Path to the Excel template used for validation.
-            COLUMN_GAPS (list): List of gaps between columns in the extracted table in mm.
-            PIVOT_WORDS (str): Keyword indicating the pivot corner in the PDF.
-            format (str): Date format to use when converting dates (default: '%Y-%m-%d').
-            
-        Returns:
-            str: Empty string if successful, or error messages on failure.
-        """
-        # Get the base name of the file from the file path
-        file_name = os.path.basename(file_path)
-
-        # Regex pattern for matching dates in the PDF titles
-        re_date = r'(\d{1,2})((?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic))(\d{4})'
-        try:
-            # Load the template Excel file and extract unique values from 'nv1' column            
-            nv1 = ['fondo de inversion abierto', 'fondo de inversion cerrado']
-            nv2 = ['fondos de inversion abiertos en bolivianos', 'fondos de inversion abiertos en ufv', 'fondos de inversion abiertos en dolares', 'fondos de inversion cerrados en bolivianos','fondos de inversion cerrados en ufv', 'fondos de inversion cerrados en dolares', 'total', 'tasa promedio ponderada']
-
-            # Open the PDF file and extract the relevant page
-            with pdfplumber.open(file_path) as pdf: 
-                page_to_extract = get_pdf_report_page(pdf=pdf, key_words=key_words, num_caracteres='ALL',page_number=page_number)
-                print(f"Extracting from page number: {page_to_extract.page_number}")
-                lines = page_to_extract.extract_text_lines()
-
-                # Find the pivot corner in the extracted lines
-                PIVOT_CORNER = [line for line in lines if search_key_words(text=line['text'], key_words=self.PIVOT_WORDS)]
-                if not PIVOT_CORNER:
-                    raise ValueError("The pivot corner not be found in the page.")
-                
-                PIVOT_CORNER = sorted(PIVOT_CORNER,key=lambda x: x['x0'])[0]                
-                X0 = PIVOT_CORNER['x0']                 
-                TOP = PIVOT_CORNER['top'] 
-                BOTTOM = page_to_extract.height
-                print(f"The X0 point is: {X0/self.CONVERSION_FACTOR:02}mm")
-
-                # Extract titles above the pivot corner
-                titles = [line["text"] for line in page_to_extract.within_bbox((0,TOP-self.TOP_GAP*self.CONVERSION_FACTOR,page_to_extract.width,TOP)).extract_text_lines()]
-                print(f"Titles extracted: {titles}")
-
-                # Extract and format the date from titles
-                date = [date_match.group(1,2,3) for title in titles if (date_match:= re.search(re_date,title, re.IGNORECASE))][0]                
-                year = int(date[2])
-                month = month_conv if(month_conv:=month_to_number(month=date[1])) else month_abr_to_number(date[1])
-                day = date[0]
-                formated_date = format_date(f'{year}-{month}-{day}')
-
-                # Calculate column lines based on the gaps
-                column_lines = list(X0 + np.cumsum(self.COLUMN_GAPS)*self.CONVERSION_FACTOR)
-                print("PAGE NUMBER",page_to_extract.page_number)
-                # Read the relevant area of the PDF into a DataFrame
-                dataframes = []
-                for page in pdf.pages[page_to_extract.page_number-1:]:
-                    text = page.extract_text()
-                    if not search_key_words(text=text,key_words=key_words):
-                        continue
-                    tabs = tabula.read_pdf(input_path=file_path,pages=page.page_number, area=[TOP,X0,BOTTOM,page_to_extract.width], pandas_options={'header':None}, columns=column_lines)[0]
-
-                    page_df = tabs.iloc[1:].drop_duplicates()
-                    dataframes.append(page_df)
-                
-                df = pd.concat(dataframes,ignore_index=True)
-
-                total_mask = df.iloc[:,2].apply(lambda x: str(x).strip().lower().startswith('total'))
-                promedio_mask = df.iloc[:,4].apply(lambda x: str(x).strip().lower().startswith('tasa'))
-                df = df.rename(columns={df.columns[0]:"fondo"})
-                nv2_mask = df.loc[:,'fondo'].apply(lambda x: isLevel(nv=nv2, text=x, percentage_simliraty=90))
-                
-                df.insert(loc=0, column='nv2', value=df.loc[nv2_mask,'fondo'])
-                df.loc[total_mask,'nv2'] = df.loc[total_mask,df.columns[3]] 
-                df.loc[promedio_mask,'nv2'] = df.loc[promedio_mask,df.columns[5:7]].agg(lambda x: " ".join(x),axis=1)
-
-                df.loc[total_mask,df.columns[3]] = np.nan
-                df.loc[promedio_mask,df.columns[5:7]] = np.nan  
-                
-                nv1_mask = df.loc[:,'fondo'].apply(lambda x: isLevel(nv=nv1, text=x, percentage_simliraty=95))
-                df.insert(loc=0, column='nv1', value=df.loc[nv1_mask,'fondo'])
-                
-                nan_mask = df[df.columns[3:]].isnull().all(axis=1)
-                nan_indices = df[nan_mask].index.to_list()
-                print(nan_indices)
-                for nan_index in nan_indices:
-                    if nan_index>1:                    
-                        df.loc[nan_index-1,'fondo'] = str(df.loc[nan_index-1,'fondo']) + " " + str(df.loc[nan_index,'fondo'])
-                
-                columns_to_ffill = ['nv1','nv2']
-
-                for col in columns_to_ffill:
-                    df[col] = df[col].ffill()                
-                
-                df.iloc[1,:3] = df.columns[:3]
-                df.columns = df.iloc[1]
-
-                df = df[~nan_mask]
-                df = df[~nv1_mask]
-                df = df[~nv2_mask]
-                numeric_mask = df.iloc[:,5:].astype(str).replace(r'[,%]','',regex=True).map(lambda x: pd.to_numeric(x,errors='coerce')).notna().any(axis=1)
-                df = df.loc[numeric_mask]                
-
-                fondo_code_mask = df['fondo'].notna()
-                fondo_code = df['fondo'].apply(lambda x: str(x).split(' '))
-                df.insert(2,column='nv3', value=fondo_code.apply(lambda x: x[0]).replace('nan',np.nan))
-                df.loc[fondo_code_mask,'fondo'] = fondo_code.loc[fondo_code_mask].apply(lambda x: ' '.join(x[1:]))
-
-                # Insert the extracted date into the melted DataFrame
-                var_columns = df.columns[:6].to_list()
-                df_melted = df.melt(id_vars=var_columns, var_name='nv4', value_name='valor')
-                df_melted = df_melted.dropna(subset='valor')                
-                df_melted.insert(len(df_melted.columns)-1,column="fecha",value=formated_date.strftime(format))                
-
-                return ({
-                    "file_name": file_name,
-                    "titles": titles,
-                    "page_number":int(page_to_extract.page_number)
-                }, df_melted)
-        except ValueError as e:
-            print(f"Validation error: {e}")
-            traceback.print_exc()                        
-        except Exception as e:            
-            print(f"An error ocurred: {e}")            
-            traceback.print_exc()
-        return ""
-    
-    def validate_data_results(self, dataframe:pd.DataFrame, decimal_separator:str, TOLERANCE:float=6.0):
-        """
-        Validates and cleans a DataFrame structured according to the DATAX Conversion Manual.
-
-        The function converts numeric values from text using the specified decimal separator and validates totals or summary values (e.g., totals, percentages), allowing a configurable tolerance.
-
-        If no totals or summaries are found, the function returns False (no errors). If validations fail, it returns True.
+        Only PDF files are supported. The table is located using ``key_words``
+        (matched against the page/row text) starting from ``page_number``, and
+        continues onto the following pages as long as they still contain the
+        same report title (multi-page reports repeat it on every page).
 
         Args:
-            dataframe (pd.DataFrame): Input DataFrame to validate.
-            decimal_separator (str): Decimal separator used in numeric strings (e.g., '.' or ',').
-            TOLERANCE (float, optional): Allowed tolerance for total validation. Defaults to 6.0
+            file_path (str): Absolute path of the source file.
+            key_words (str): Keywords identifying the report title/table.
+            template_path (str): Reserved for future template comparison; unused.
+            page_number (int): Page where the search for the table starts.
+            format (str, optional): Expected date format. Defaults to '%Y-%m-%d'.
 
         Returns:
-            bool: True if any validation failed, False if all passed or no totals were found.
+            tuple[dict, pd.DataFrame] | str: ``(metadata, dataframe)`` on success,
+            where ``metadata`` has ``file_name``, ``titles`` (title lines plus
+            the "al DDMMMYYYY" report date line) and ``page_number`` (the page
+            where the table starts), and ``dataframe`` has columns
+            ``[nv1, nv2, nv3, nv4, nv5, nv6, nv7, nv8, fecha, valor]``:
+            nv1 fund type root, nv2 category (Abierto/Cerrado), nv3 currency
+            sub-group, nv4 fund code (or "Total"/"Tasa Promedio Ponderada"),
+            nv5 fund name, nv6 SAFI, nv7 risk rating, nv8 metric name.
+            Returns an empty string ``""`` on failure.
         """
-        ERROR_TOLERANCE_VALUE = TOLERANCE
-        totals_mismatch = False
-        
-        # Create a copy of the DataFrame to work on
-        cleaned_df = dataframe.copy()
-        # Clean the 'valor' column by removing special characters and converting to numeric
-        cleaned_df['valor'] = to_numeric_datax(serie=cleaned_df['valor'],decimal_separator=decimal_separator)
-        cleaned_df = cleaned_df.dropna(subset='valor')
+        try:
+            fondos_root_label = 'Fondo de Inversión'
+            fondos_summary_labels = {'total', 'tasa promedio ponderada'}
+            fondos_columns = ['nv1', 'nv2', 'nv3', 'nv4', 'nv5', 'nv6', 'nv7', 'nv8', 'fecha', 'valor']
+            fondos_metric_order = [
+                'Cartera', 'Cuota', 'Part', 'TR 30 días', 'TR 90 días',
+                'TR 180 días', 'TR 360 días', 'Com Fija', 'Com Éxito',
+            ]
+            fondos_date_line_pattern = re.compile(r'\bal\s+\d{1,2}[A-Za-zÀ-ÿ]{3,4}\d{4}\b', re.IGNORECASE)
 
-        # Totals validation
-        totals_pivot_df = pd.pivot_table(cleaned_df, values='valor', columns='nv4', index='nv2', aggfunc='sum',sort=False)
-        print(totals_pivot_df)
-        mean_mask = totals_pivot_df.index.str.contains('promedio',case=False,regex=True)
-        totals_pivot_df = totals_pivot_df[~mean_mask]
+            def clean_cell(value):
+                if value is None:
+                    return None
+                value = re.sub(r'\s+', ' ', str(value)).strip()
+                return value or None
 
-        total_mask = totals_pivot_df.index.str.contains('total',case=False,regex=True)
-        total_row = totals_pivot_df[total_mask].iloc[0]
-        totals_pivot_df[total_mask] = -totals_pivot_df[total_mask]
+            extension = os.path.splitext(file_path)[1].lower()
+            if extension != '.pdf':
+                raise ValueError(f"Unsupported file extension: {extension}")
 
-        non_nan_columns = total_row[total_row.notna()].index.tolist()
-        
-        totals_validation = abs(totals_pivot_df.loc[:,non_nan_columns].agg('sum',axis=0))
-        print(f'Totals validation:\n{totals_validation}\n')
+            with pdfplumber.open(file_path) as pdf:
+                start_page = get_pdf_report_page(pdf, key_words, num_caracteres='ALL', page_number=page_number)
+                found_page = start_page.page_number - 1
 
-        totals_validation = totals_validation.between(0,ERROR_TOLERANCE_VALUE).all()
+                all_titles = []
+                all_rows = []
+                date_text = None
+                page_index = found_page
 
-        if not totals_validation:
-            print(f"Totals validation failed.")
-            totals_mismatch = True
-        
-        # AVG validation
-        mean_pivot_df = cleaned_df.copy()
-        mean_mask = mean_pivot_df['nv2'].str.contains('promedio',case=False,regex=True)
-        mean_rows = mean_pivot_df[mean_mask].index
-        for index in mean_rows:
-            mean_pivot_df.loc[index,'nv2'] = mean_pivot_df.loc[index,'nv2'] + "_" + mean_pivot_df.loc[index-1,'nv2']
-        
-        mean_pivot_df = pd.pivot_table(mean_pivot_df, values='valor', columns='nv4', index='nv2', aggfunc='mean',sort=False)
+                while page_index < len(pdf.pages):
+                    page = pdf.pages[page_index]
+                    page_text = page.extract_text() or ''
+                    if not search_key_words(text=page_text, key_words=key_words):
+                        break
 
-        total_mask = mean_pivot_df.index.str.contains('total',case=False,regex=True)
-        mean_pivot_df = mean_pivot_df[~total_mask]
+                    if not date_text:
+                        match = fondos_date_line_pattern.search(page_text)
+                        if match:
+                            date_text = match.group(0)
 
-        mean_mask = mean_pivot_df.index.str.contains('promedio',case=False,regex=True)
-        mean_row = mean_pivot_df[mean_mask].iloc[0]
-        mean_pivot_df[mean_mask] = -mean_pivot_df[mean_mask]
+                    tables = page.extract_tables()
+                    if not tables:
+                        break
 
-        non_nan_columns = mean_row[mean_row.notna()].index.tolist()
-        print(mean_pivot_df.loc[:,non_nan_columns])
-        mean_validation = abs(mean_pivot_df.loc[:,non_nan_columns].agg('sum',axis=0))
-        print(f'Average validation:\n{mean_validation}\n')
+                    page_rows = max(tables, key=len)
+                    rows = [
+                        row for row in page_rows
+                        if not fondos_date_line_pattern.search(clean_cell(row[0]) or '')
+                    ]
 
-        mean_validation = mean_validation.between(0,ERROR_TOLERANCE_VALUE).all()
+                    pivot_index = None
+                    for i, row in enumerate(rows):
+                        row_text = ' '.join(str(cell) for cell in row if cell)
+                        if search_key_words(text=row_text, key_words=key_words):
+                            pivot_index = i
+                            break
 
-        if not mean_validation:
-            print(f"Average validation failed.")
-            totals_mismatch = True
-        # Return the cleaned DataFrame if all validations pass
-        if not totals_mismatch:
-            print("All validations passed. Returning the cleaned DataFrame.") 
-        return totals_mismatch
+                    if pivot_index is None:
+                        page_index += 1
+                        continue
+
+                    titles = [
+                        clean_cell(row[0])
+                        for row in rows[:pivot_index + 1]
+                        if clean_cell(row[0])
+                    ]
+                    data_rows = rows[pivot_index + 1:]
+
+                    if not all_titles:
+                        all_titles = titles + ([date_text] if date_text else [])
+
+                    all_rows.extend(data_rows)
+                    page_index += 1
+
+            if not all_rows:
+                raise ValueError('The report table could not be found in the file.')
+
+            if not date_text:
+                fecha = '-'
+            else:
+                parsed = get_col_date(date_text)
+                try:
+                    fecha = datetime.strptime(parsed, '%Y-%m-%d').strftime(format)
+                except (ValueError, TypeError):
+                    fecha = '-'
+
+            records = []
+            nv1 = None
+            nv2 = None
+            nv3 = None
+            headers = None
+
+            for row in all_rows:
+                cells = [clean_cell(cell) for cell in row]
+                label = cells[0]
+                if label is None:
+                    continue
+
+                rest = cells[1:]
+
+                if not any(rest):
+                    if label == fondos_root_label:
+                        nv1 = label
+                    else:
+                        nv2 = label
+                    continue
+
+                if label.lower() in fondos_summary_labels:
+                    nv4, nv5, nv6, nv7 = label, None, None, None
+                elif cells[1] is None:
+                    nv3 = label
+                    headers = cells[2:]
+                    continue
+                else:
+                    nv4, nv5, nv6, nv7 = label, cells[1], cells[2], cells[3]
+
+                if headers is None:
+                    continue
+
+                metric_headers = headers[2:]
+                metric_values = cells[4:]
+                for metric_name, value in zip(metric_headers, metric_values):
+                    if not metric_name or value is None:
+                        continue
+                    records.append({
+                        'nv1': nv1,
+                        'nv2': nv2,
+                        'nv3': nv3,
+                        'nv4': nv4,
+                        'nv5': nv5,
+                        'nv6': nv6,
+                        'nv7': nv7,
+                        'nv8': metric_name,
+                        'fecha': fecha,
+                        'valor': value,
+                    })
+
+            dataframe = pd.DataFrame.from_records(records, columns=fondos_columns)
+            nv8_rank = pd.Categorical(dataframe['nv8'], categories=fondos_metric_order, ordered=True)
+            dataframe = (
+                dataframe.assign(_nv8_rank=nv8_rank)
+                .sort_values(by='_nv8_rank', kind='stable')
+                .drop(columns='_nv8_rank')
+                .reset_index(drop=True)
+            )
+
+            metadata = {
+                'file_name': os.path.basename(file_path),
+                'titles': all_titles,
+                'page_number': found_page + 1,
+            }
+            return metadata, dataframe
+
+        except Exception as error:
+            print(f"Could not extract report from {file_path}: {error}")
+            traceback.print_exc()
+            return ""
+
+    def validate_data_results(self, dataframe, decimal_separator, TOLERANCE=6.0):
+        """
+        Validate extracted values against the printed "Total" rows.
+
+        Rows labeled "Tasa Promedio Ponderada" are weighted averages, not sums,
+        and are excluded from the comparison instead of being (incorrectly)
+        validated as plain totals.
+
+        Args:
+            dataframe (pd.DataFrame): Normalized data, as enriched by
+                ``insert_metadata`` (must include the ``nv1``..``nv8`` and
+                ``valor`` columns).
+            decimal_separator (str): Decimal separator used in ``valor`` ('.' or ',').
+            TOLERANCE (float, optional): Acceptable difference between the
+                computed and printed totals. Defaults to 6.0.
+
+        Returns:
+            bool: True if a total is off by more than ``TOLERANCE`` (or the
+            validation itself failed), False if every total matches or there
+            were no totals to compare.
+        """
+        try:
+            fondos_summary_labels = {'total', 'tasa promedio ponderada'}
+
+            working_df = dataframe.copy()
+            working_df['valor'] = to_numeric_datax(working_df['valor'], decimal_separator)
+
+            nv4_key = working_df['nv4'].astype(str).str.strip().str.lower()
+            total_rows = working_df[nv4_key == 'total']
+
+            if total_rows.empty:
+                return False
+
+            group_columns = ['nv1', 'nv2', 'nv3', 'nv8']
+            data_rows = working_df[~nv4_key.isin(fondos_summary_labels)]
+
+            for _, total_row in total_rows.iterrows():
+                printed_total = total_row['valor']
+                if pd.isna(printed_total):
+                    continue
+
+                mask = (data_rows[group_columns] == total_row[group_columns]).all(axis=1)
+                computed_total = data_rows.loc[mask, 'valor'].sum()
+
+                if abs(computed_total - printed_total) > TOLERANCE:
+                    print(
+                        f"Total mismatch for {total_row[group_columns].to_dict()}: "
+                        f"computed={computed_total}, printed={printed_total}"
+                    )
+                    return True
+
+            return False
+
+        except Exception as error:
+            print(f"Could not validate data results: {error}")
+            traceback.print_exc()
+            return True

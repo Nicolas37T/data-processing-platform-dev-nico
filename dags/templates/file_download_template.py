@@ -181,6 +181,11 @@ def create_dag(dag, connection_id, id_dag=None):
         max_date_item = max(files_dicts, key=lambda x: datetime.strptime(x['updated_to'], "%Y-%m-%d"))
         ti.xcom_push(key='file_update', value=max_date_item)
         ti.xcom_push(key='files_dicts', value=files_dicts)
+        try:
+            from templates.dag_metadata_updater import update_dag_tag_and_doc
+            update_dag_tag_and_doc(id_dag, 'download', max_date_item.get('updated_to'))
+        except Exception as e:
+            print(f"Warning: Could not update DAG metadata tag: {e}")
 
     def _assigner(ti):
         downloads_records = ti.xcom_pull(task_ids='record_download')

@@ -1,18 +1,18 @@
+from openpyxl.formula import tokenizer
 import sys
-sys.path.append('d:/DATAX/data-processing-platform')
 import os
 import unittest
 import importlib
 import pandas as pd
 from datetime import datetime
-from sqlalchemy import create_engine,inspect,text
+from sqlalchemy import create_engine, inspect, text
 from models.conversion.tools.conversion_tools import insert_metadata, verify_values
 
-REPORT_CODE = 'D_PY_000000007_01'
-FILE_PATH = r"\\10.0.0.12\downloaded_files\PY\D_PY_000000007\historical data\2014-12-31_indicadores inflacion.pdf"
+REPORT_CODE = 'D_BO_000000418_01'
+FILE_PATH = "models/conversion/C_BO_000000418/20260816publicacion.xlsx"
 
 def get_executor(code):
-    db_code = '_'.join(code.split('_')[:-1]).replace('D_','C_')
+    db_code = '_'.join(code.split('_')[:-1]).replace('D_', 'C_')
     module = importlib.import_module(f'models.conversion.{db_code}.{code}')
     class_ = getattr(module, code)    
     return class_()
@@ -22,22 +22,22 @@ class TestConversion(unittest.TestCase):
     def setUp(self):
         self.robot = get_executor(REPORT_CODE)
         
-        _host = os.environ.get("BUSINESS_DB_HOST", "localhost")
-        _port = os.environ.get("BUSINESS_DB_PORT", "5432")
-        _user = os.environ.get("BUSINESS_DB_USER", "postgres")
-        _password = os.environ.get("BUSINESS_DB_PASSWORD", "datax")
+        _host = "10.0.0.16"
+        _port = "5434"
+        _user = "postgres"
+        _password = "datax"
         platform_engine = create_engine(f"postgresql+psycopg2://{_user}:{_password}@{_host}:{_port}/platform_db")
-        report_data = pd.read_sql_query(sql=f'SELECT * FROM report WHERE code = \'{REPORT_CODE}\'',con=platform_engine)
+        report_data = pd.read_sql_query(sql=f"SELECT * FROM report WHERE code = '{REPORT_CODE}'", con=platform_engine)
         report_data = report_data.to_dict('records')[0]
         self.report_data = report_data        
 
         self.replacement_table = report_data['replacement_table'].split(';')
         country_code = REPORT_CODE.split('_')[1]
 
-        _data_host = os.environ.get("DATA_DB_HOST", "localhost")
-        _data_port = os.environ.get("DATA_DB_PORT", "5432")
-        _data_user = os.environ.get("DATA_DB_USER", "postgres")
-        _data_password = os.environ.get("DATA_DB_PASSWORD", "datax")
+        _data_host = "10.0.0.16"
+        _data_port = "5434"
+        _data_user = "postgres"
+        _data_password = "datax"
         engine = create_engine(f"postgresql+psycopg2://{_data_user}:{_data_password}@{_data_host}:{_data_port}/DATA_DB_{country_code}_AUX")
         with engine.connect() as conn:
             with conn.begin():
@@ -49,7 +49,12 @@ class TestConversion(unittest.TestCase):
 
     def test_extract(self):
         # Test data extraction
-        report_dict,report_df = self.robot.extraction(file_path=FILE_PATH,key_words=self.report_data['key_words'], template_path=self.report_data['converted_report_path'],page_number=self.report_data['page_number'])
+        report_dict, report_df = self.robot.extraction(
+            file_path=FILE_PATH,
+            key_words=self.report_data['key_words'],
+            template_path=self.report_data['converted_report_path'],
+            page_number=self.report_data['page_number']
+        )
 
         # Validate report_dict structure and content
         expected_report_keys = {'file_name', 'titles', 'page_number'}
@@ -80,18 +85,24 @@ class TestConversion(unittest.TestCase):
         verify_values(data_df=report_df)
 
         # Validate date column
-        self.assertEqual("fecha", report_df.columns[-2], f"The 'fecha' column must be the second-to-last column in the DataFrame (found: {report_df.columns[-2]}")
+        self.assertEqual("fecha", report_df.columns[-2], f"The 'fecha' column must be the second-to-last column in the DataFrame (found: {report_df.columns[-2]})")
         try:
             pd.to_datetime(report_df['fecha'], errors='raise', format='%Y-%m-%d')
         except ValueError as e:
             self.fail(f"Date format validation failed: {str(e)}")
 
-        #* comentar para pruebas intermedias        
+        #* comentar para pruebas intermedias                
         replaces_dict, report_df = self.robot.text_match(df=report_df,db_aux_conn=self.engine,replacement_table_name=self.replacement_table[1],replacement_table_schema=self.replacement_table[0],table_exists=self.table_exists,first_execution=True, dag_run_date= datetime.now())
         #*        
 
         # Metadata insertion
-        final_df = insert_metadata(dataframe=report_df, titles=report_dict['titles'],file_name=report_dict['file_name'])
+        final_df = insert_metadata(dataframe=report_df, titles=report_dict['titles'], file_name=report_dict['file_name'])
+
+
+        db_code = '_'.join(REPORT_CODE.split('_')[:-1]).replace('D_', 'C_')
+        output_sqlite = f"models/conversion/{db_code}/{REPORT_CODE}.sqlite"
+        sqlite_engine = create_engine(f"sqlite:///{output_sqlite}")
+        final_df.to_sql(REPORT_CODE, con=sqlite_engine, if_exists="replace", index=False)
 
         # Validate data results
         has_error = self.robot.validate_data_results(

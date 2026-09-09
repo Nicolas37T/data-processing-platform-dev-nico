@@ -522,30 +522,29 @@ def search_key_words(text,key_word):
 def convert_win_path(path_win, add_dir=""):
     if not path_win:
         return None
-    path_unix = path_win.replace (ntpath.sep, posixpath.sep)
-    path_unix = path_unix.replace('\\\\','\\')
-    
-    path_unix = path_unix.replace("//10.0.0.16/spim/","/mnt/datos1/downloaded_files/")+add_dir
-    path_unix = path_unix.replace("//10.0.0.16/SPIM/","/mnt/datos1/downloaded_files/")+add_dir
-    
-    path_unix = path_unix.replace("//10.0.0.12/spim/","/media/datax/Local_Disk_B/spim/")+add_dir
-    path_unix = path_unix.replace("//10.0.0.12/data_process/","/media/datax/Local_Disk_B/data_process/")+add_dir
-    path_unix = path_unix.replace("//10.0.0.12/downloaded_files/","/media/datax/Local_Disk_B/downloaded_files/")+add_dir
+    path_win = path_win.replace('\\\\', '\\')
+    path_unix = path_win.replace(ntpath.sep, posixpath.sep)
+    path_unix = '//' + '/'.join([i for i in path_unix.split('/') if i])
+
+    # Servidor 10.0.0.16
+    path_unix = path_unix.replace("//10.0.0.16/spim/", "/mnt/datos1/downloaded_files/") + add_dir
+    path_unix = path_unix.replace("//10.0.0.16/SPIM/", "/mnt/datos1/downloaded_files/") + add_dir
+    path_unix = path_unix.replace("//10.0.0.16/downloaded_files/", "/mnt/datos1/downloaded_files/") + add_dir
+    path_unix = path_unix.replace("//10.0.0.16/data_process/", "/mnt/datos1/data_process/") + add_dir
+
     return path_unix
 
 # convert a linux path to a windows path
 def convert_unix_path(path_unix, add_dir=""):
-    path_win = path_unix.replace(posixpath.sep, ntpath.sep)
-    path_win = path_win.replace("\\","\\\\")
-    
-    path_win = path_win.replace("\\\\mnt\\\\datos1\\\\downloaded_files","\\\\\\\\10.0.0.16\\\\spim")+add_dir
-    
-    path_win = path_win.replace("\\home\\datax-ubuntu\\","\\\\10.0.0.16\\")+add_dir
-    path_win = path_win.replace("\\\\media\\\\datax\\\\Local_Disk_B\\\\spim","\\\\\\\\10.0.0.12\\\\spim")+add_dir
-    path_win = path_win.replace("\\\\media\\\\datax\\\\Local_Disk_B\\\\data_process","\\\\\\\\10.0.0.12\\\\data_process")+add_dir
-    path_win = path_win.replace("\\\\media\\\\datax\\\\Local_Disk_B\\\\downloaded_files","\\\\\\\\10.0.0.12\\\\downloaded_files")+add_dir
-    return path_win
+    if not path_unix:
+        return None
+    # Servidor 10.0.0.16
+    path_unix = path_unix.replace("/mnt/datos1/downloaded_files/", "//10.0.0.16/downloaded_files/") + add_dir
+    path_unix = path_unix.replace("/mnt/datos1/spim/", "//10.0.0.16/spim/") + add_dir
+    path_unix = path_unix.replace("/mnt/datos1/data_process/", "//10.0.0.16/data_process/") + add_dir
 
+    path_win = path_unix.replace(posixpath.sep, ntpath.sep)
+    return path_win
 
 
 
@@ -697,3 +696,14 @@ def create_folder_with_permissions(folder_path):
     # 2. Force the permissions using os.chmod
     # Doing this in a separate step bypasses the system's default umask
     os.chmod(folder_path, 0o777)
+
+
+def update_dag_metadata(dag_id: str, new_date: str, process_type: str = 'download') -> bool:
+    """Helper to update DAG tags and doc_md with the latest date."""
+    try:
+        from dags.templates.dag_metadata_updater import update_dag_tag_and_doc
+        return update_dag_tag_and_doc(dag_id=dag_id, process_type=process_type, new_date=new_date)
+    except Exception as e:
+        print(f"Warning: Failed to update DAG metadata: {e}")
+        return False
+

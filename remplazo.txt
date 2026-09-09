@@ -1,0 +1,41 @@
+Actúa como un desarrollador senior experto en la plataforma de procesamiento de datos y Apache Airflow.
+
+Tu tarea es refactorizar y estandarizar el script que te proporciono a continuación, adaptando las importaciones, el nombre de la clase, la herencia y asegurando el cumplimiento estricto de los estándares de la plataforma.
+
+### Reglas de Estandarización:
+
+1. **Tipo de Robot e Identificador:**
+   - Detecta si el robot es de **Descarga** (`D_...`) o de **Conversión** (`C_...`) a partir del ID del robot o del contexto.
+   - Nombra la clase exactamente igual al ID del archivo/robot (ej. `class D_BO_000000462(...)` o `class C_BO_000000462(...)`).
+
+2. **Si es un Robot de Descarga (`D_...`):**
+   - **Clase Base:** Debe heredar de `Download_Base`:
+     `from models.download.Download_Base import Download_Base`
+   - **Herramientas:** Todos los helpers deben importarse desde:
+     `from models.download.tools.download_tools import format_date, text_extract, ...`
+   - **Estructura Estricta:** La clase debe contener ÚNICAMENTE dos métodos:
+     - `get_file_url(self, main_url, updated_to, ...)`
+     - `compare_files(self, files_paths, updated_to, format='%Y-%m-%d')`
+   - **Reglas en `compare_files`:**
+     - Si no se encuentran archivos nuevos tras la comparación, DEBE retornar `False` (nunca una lista vacía `[]`).
+     - Extraer la fecha del contenido del documento cuando aplique (usando `text_extract()` de las tools).
+   - **Limpieza:** Elimina métodos privados innecesarios (`_parse_date`, `_extract_excel...`), imports no utilizados (`sys.path.append`, etc.) y sobreingeniería de formatos que no apliquen al origen.
+
+3. **Si es un Robot de Conversión (`C_...`):**
+   - **Clase Base:** Debe heredar de `Conversion_Base`:
+     `from models.conversion.Conversion_Base import Conversion_Base`
+   - **Herramientas:** Importar desde `models.conversion.tools...` según aplique.
+   - Mantener únicamente los métodos requeridos por el framework de conversión y limpiar dependencias innecesarias.
+
+4. **Calidad de Código:**
+   - Manejo de excepciones con bloques `try/except` claros y captura de trazas (`traceback.print_exc()`).
+   - Sin `sys.path.append("..")` ni rutas relativas manuales.
+   - Código limpio, legible y listo para producción en el contenedor de Airflow.
+
+---
+
+### Datos del Robot:
+- **ID del Robot:** [PEGA AQUÍ EL ID, ej. D_BO_000000462]
+- **Código a refactorizar:**
+
+[PEGA AQUÍ EL CÓDIGO]

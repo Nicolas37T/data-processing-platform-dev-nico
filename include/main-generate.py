@@ -16,22 +16,37 @@ process_dict = {
         'db_table': 'file',
         'prefix': 'D',
         'sql_query': (
-            'SELECT f.code, f.download_type, f.schedule_interval, '
-            's.short_name, s.name AS source_name '
+            'SELECT f.code, f.name AS file_name, f.download_type, f.schedule_interval, '
+            'f.updated_to, f.main_url, f.navigation_path, '
+            's.short_name, s.name AS source_name, '
+            'COALESCE(STRING_AGG(DISTINCT db.db_code, \', \'), \'\') AS dataset, '
+            'COALESCE(STRING_AGG(DISTINCT db.name, \' / \'), \'\') AS dataset_name '
             'FROM file f '
             'JOIN source s ON f.id_source = s.id_source '
-            'WHERE 1=1'
+            'LEFT JOIN report r ON r.id_file = f.id_file '
+            'LEFT JOIN data_base_report dbr ON dbr.report_code = r.code '
+            'LEFT JOIN data_base db ON db.db_code = dbr.db_code '
+            'WHERE 1=1 '
+            'GROUP BY f.code, f.name, f.download_type, f.schedule_interval, f.updated_to, '
+            'f.main_url, f.navigation_path, s.short_name, s.name'
         ),
     },
     'conversion': {
         'db_table': 'report',
         'prefix': 'C',
         'sql_query': (
-            'SELECT r.code, s.short_name, s.name AS source_name '
+            'SELECT r.code, r.name AS report_name, r.converted_to, r.key_words, '
+            'r.path AS path_file, r.page_number AS location, '
+            's.short_name, s.name AS source_name, '
+            'COALESCE(STRING_AGG(DISTINCT db.db_code, \', \'), \'\') AS dataset, '
+            'COALESCE(STRING_AGG(DISTINCT db.name, \' / \'), \'\') AS dataset_name '
             'FROM report r '
             'JOIN file f ON r.id_file = f.id_file '
             'JOIN source s ON f.id_source = s.id_source '
-            'WHERE r."isActive" = TRUE'
+            'LEFT JOIN data_base_report dbr ON dbr.report_code = r.code '
+            'LEFT JOIN data_base db ON db.db_code = dbr.db_code '
+            'WHERE 1=1 '
+            'GROUP BY r.code, r.name, r.converted_to, r.key_words, r.path, r.page_number, s.short_name, s.name'
         ),
     },
     'migration': {
@@ -192,7 +207,22 @@ class RobotCodeHandler:
 
         # Transform before filtering so user codes (C_BO_* / M_BO_*) match DB values
         df['code'] = df['code'].apply(lambda x: "_".join([prefix] + x.split('_')[1:3]))
-        df = df.drop_duplicates()
+        
+        if self.process == 'conversion':
+            agg_dict = {
+                'short_name': 'first',
+                'source_name': 'first',
+                'dataset': lambda x: ', '.join(sorted(set(filter(None, [s.strip() for item in x.dropna() for s in str(item).split(',')])))),
+                'dataset_name': lambda x: ' / '.join(sorted(set(filter(None, [s.strip() for item in x.dropna() for s in str(item).split('/')])))),
+                'report_name': lambda x: ' / '.join(sorted(set(filter(None, x.dropna().astype(str))))),
+                'converted_to': lambda x: max([d for d in x if pd.notna(d)], default=None),
+                'key_words': lambda x: ', '.join(sorted(set(filter(None, x.dropna().astype(str))))),
+                'path_file': 'first',
+                'location': 'first',
+            }
+            df = df.groupby('code', as_index=False).agg(agg_dict)
+        else:
+            df = df.drop_duplicates(subset=['code'])
 
         if isinstance(codes_input, list):
             select_mask = df['code'].isin(codes_input)
@@ -223,25 +253,112 @@ class RobotCodeHandler:
 
             # Resolve template name
             if self.process == 'download':
-                match = re.search(r'[(](.*)[)]', robot['download_type'])
-                template = "_".join(match.group(1).strip().split('_')[:-1])
+                match = re.search(r'[(](.*)[)]', str(robot.get('download_type', '')))
+                if match:
+                    template = "_".join(match.group(1).strip().split('_')[:-1])
+                else:
+                    template = 'file_download'
             elif self.process == 'product' and self.product_template:
                 template = self.product_template
             else:
                 template = self.process
 
-            short_name = robot.get('short_name') or ''
-            tags_str = f"'{short_name}', '{self.process.capitalize()}'"
+            # Build enriched tags
+            tags = []
+            short_name = str(robot.get('short_name') or '').strip()
+            if short_name:
+                tags.append(short_name)
 
-            for line in fileinput.input(robot_file_path, inplace=True):
-                line = line.replace("dag-id", "'" + robot['code'] + "'")
-                line = line.replace("tagsToReplace", tags_str)
-                line = line.replace("connection-id", "'" + self.DATA_BASE + "'")
-                line = line.replace("dag-template", f"{template}_template")
-                if self.process == 'download':
-                    line = line.replace("#schedule=", "schedule=")
-                    line = line.replace("schedule-to-replace", f"'{robot['schedule_interval']}'")
-                print(line, end="")
+            dataset = str(robot.get('dataset') or '').strip()
+            if dataset:
+                for ds in dataset.split(','):
+                    ds_clean = ds.strip()
+                    if ds_clean and ds_clean not in tags:
+                        tags.append(ds_clean)
+
+            tags.append(self.process.capitalize())
+
+            if self.process == 'download':
+                updated_to = str(robot.get('updated_to') or '').strip()
+                if updated_to and updated_to != 'None':
+                    tags.append(updated_to)
+            elif self.process == 'conversion':
+                converted_to = robot.get('converted_to')
+                if converted_to and str(converted_to) != 'None':
+                    tags.append(str(converted_to).strip())
+                key_words = str(robot.get('key_words') or '').strip()
+                if key_words and key_words != 'None':
+                    kw_clean = key_words.split(',')[0].strip()
+                    if kw_clean and kw_clean not in tags:
+                        tags.append(kw_clean)
+
+            tags_str = ", ".join([f"'{t}'" for t in tags])
+
+            # Build doc_md content as clean GFM Markdown Table (100% compatible with Airflow 3)
+            def clean_val(val, default='-'):
+                if val is None or pd.isna(val) or str(val).strip().lower() in ('nan', 'none', ''):
+                    return default
+                return str(val).strip()
+
+            source_name = clean_val(robot.get("source_name"))
+            short_name = clean_val(robot.get("short_name"))
+            datasets_str = clean_val(robot.get("dataset"))
+            dataset_name = clean_val(robot.get("dataset_name"))
+
+            if self.process == 'download':
+                url = clean_val(robot.get('main_url'), default='#')
+                url_display = f"[Abrir portal ↗]({url})" if url != '#' else '-'
+                doc_md_str = (
+                    f"## 📥 DAG Descarga: {robot['code']}\n\n"
+                    f"| Parámetro | Detalle |\n"
+                    f"|---|---|\n"
+                    f"| **🏛️ Fuente** | **{short_name}** ({source_name}) |\n"
+                    f"| **📊 Dataset(s)** | `{datasets_str}` |\n"
+                    f"| **📝 Nombre Dataset** | {dataset_name} |\n"
+                    f"| **📁 Archivo** | {clean_val(robot.get('file_name'))} |\n"
+                    f"| **⚙️ Tipo Descarga** | {clean_val(robot.get('download_type'))} |\n"
+                    f"| **📅 Última Descarga** | **{clean_val(robot.get('updated_to'))}** |\n"
+                    f"| **⏱️ Frecuencia** | `{clean_val(robot.get('schedule_interval'))}` |\n"
+                    f"| **🧭 Ruta Web** | {clean_val(robot.get('navigation_path'))} |\n"
+                    f"| **🌐 Portal Web** | {url_display} |\n"
+                )
+            elif self.process == 'conversion':
+                raw_path = clean_val(robot.get('path_file'))
+                clean_path = raw_path.replace('\\', '/') if raw_path != '-' else '-'
+                doc_md_str = (
+                    f"## 🔄 DAG Conversión: {robot['code']}\n\n"
+                    f"| Parámetro | Detalle |\n"
+                    f"|---|---|\n"
+                    f"| **🏛️ Fuente** | **{short_name}** ({source_name}) |\n"
+                    f"| **📊 Dataset(s)** | `{datasets_str}` |\n"
+                    f"| **📝 Nombre Dataset** | {dataset_name} |\n"
+                    f"| **📄 Reporte(s)** | {clean_val(robot.get('report_name'))} |\n"
+                    f"| **📅 Última Conversión** | **{clean_val(robot.get('converted_to'))}** |\n"
+                    f"| **🔑 Palabras Clave** | {clean_val(robot.get('key_words'))} |\n"
+                    f"| **📍 Ubicación** | {clean_val(robot.get('location'))} |\n"
+                    f"| **💾 Ruta Almacén** | `{clean_path}` |\n"
+                )
+            else:
+                doc_md_str = (
+                    f"## 📋 DAG {self.process.capitalize()}: {robot['code']}\n\n"
+                    f"- **Fuente:** **{short_name}**\n"
+                    f"- **Tipo:** {self.process.capitalize()}\n"
+                )
+
+            with open(robot_file_path, 'r', encoding='utf-8') as f:
+                file_content = f.read()
+
+            file_content = file_content.replace("dag-id", f"'{robot['code']}'")
+            file_content = file_content.replace("tagsToReplace", tags_str)
+            file_content = file_content.replace("docMdToReplace", doc_md_str.replace('"""', "'''"))
+            file_content = file_content.replace("connection-id", f"'{self.DATA_BASE}'")
+            file_content = file_content.replace("dag-template", f"{template}_template")
+            if self.process == 'download':
+                file_content = file_content.replace("#schedule=", "schedule=")
+                file_content = file_content.replace("schedule-to-replace", f"'{robot['schedule_interval']}'")
+
+            with open(robot_file_path, 'w', encoding='utf-8') as f:
+                f.write(file_content)
 
             success_print(f"Generated: {robot_file_path}")
 
