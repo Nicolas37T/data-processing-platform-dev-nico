@@ -4,7 +4,7 @@ Este documento resume todo el trabajo, análisis, causas raíz y soluciones impl
 
 ---
 
-## 1. 🔄 DAG `C_BO_000000418` / `D_BO_000000418_01` (Tasas Interbancarias - BCB)
+## 1. 🔄 DAG `C_BO_000000418` / `D_BO_000000418_01` y `02` (Tasas Interbancarias y Pasivas - BCB)
 
 ### Problema Inicial
 - El DAG fallaba en la tarea `notify_structure_change` con error de sintaxis SQL:
@@ -12,21 +12,37 @@ Este documento resume todo el trabajo, análisis, causas raíz y soluciones impl
 - En `extraction` y `structure_review`:
   - `TypeError: sequence item 0: expected str instance, float found` en `row_text = " ".join(row_values)`.
   - Fallo en `verify_values`: `Value verification failed: 'valor' column contains non-numeric or invalid values: 1 <NA>`.
+- **En el almacenamiento (`/mnt/datos1/data_process/BO/D_BO_000000418/2026/2026-09/`)**:
+  - Aparecían múltiples carpetas `2026-09-08_...__report_structure_change` y `2026-09-09_...__report_structure_change`.
+- **En el monitor de Airflow**:
+  - `D_BO_000000418_01` convirtió exitosamente a `2026-09-06`.
+  - `D_BO_000000418_02` quedó rezagado en `2026-08-30` con desfase de 7 días, reportando `no_updates`.
 
 ### Causa Raíz
-1. Al unir celdas vacías con `join`, los `NaN` eran flotantes y rompían la cadena.
-2. La conversión a `pd.NA` (`.replace({np.nan: pd.NA})`) generaba cadenas `<NA>` no numéricas que hacían fallar `verify_values`.
-3. En la plantilla SQL de inserción, si `id_download` venía vacío o `None`, se interpolaba como el texto literal `'None'` en lugar de `NULL`.
-4. El paquete `models/conversion/C_BO_000000418` no tenía `__init__.py` y faltaba el archivo DAG local `dags/conversion/C_BO_000000418.py`.
+1. **Carpetas `__report_structure_change`**:
+   - Fueron generadas los días 8 y 9 de septiembre por `D_BO_000000418_01` antes de aplicar la corrección. Al fallar `verify_values` por los `<NA>`, `Conversion_Base.structure_review` catalogó el archivo como cambio de estructura y lo copió a esas carpetas. Son registros históricos de ejecuciones fallidas anteriores.
+2. **Rezagado de `D_BO_000000418_02` (Tasas Pasivas)**:
+   - La función `parse_report_date` no leía el nombre de archivo y utilizaba la expresión regular `r"(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})"`.
+   - Para la semana del archivo del 6 de septiembre, el encabezado en el Excel era `"Semana del 31 de agosto al 6 de septiembre de 2026"`. Al haber cambio de mes entre el día 31 y la palabra "al", la expresión regular no hizo match y cayó en un fallback con fecha estática `"2026-08-16"`.
+   - Como `"2026-08-16"` era menor a `converted_to` (`2026-08-30`), Airflow determinó `no_updates` y nunca procesó la actualización de septiembre.
+3. **Inconsistencias de Niveles en `D_BO_000000418_02`**:
+   - `nv1` extraía etiquetas en mayúsculas sostenidas (`BANCOS MÚLTIPLES`, etc.) en vez de tipo título (`Bancos Múltiples`, etc.).
+   - `nv4` usaba minúsculas `"Depósitos a plazo fijo (días)"` frente al estándar histórico `"Depósitos a Plazo Fijo (Días)"`.
 
 ### Solución Implementada
 - **`models/conversion/C_BO_000000418/D_BO_000000418_01.py`**:
   - Limpieza de valores nulos antes del join: `row.dropna().astype(str)`.
   - Eliminación del reemplazo por `pd.NA` en la columna `valor`.
   - Limpieza numérica consistente con `to_numeric_datax`.
+  - Regex de fallback actualizada a `r"al\s+(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})"` para soportar semanas que cruzan mes.
+- **`models/conversion/C_BO_000000418/D_BO_000000418_02.py`**:
+  - Extracción de fecha prioritaria desde el nombre del archivo (`2026-09-06`).
+  - Fallback por contenido mejorado con regex de fin de semana (`r"al\s+(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})"`), eliminando la fecha estática `"2026-08-16"`.
+  - Mapeo canónico para `nv1` (`group_mapping`) garantizando etiquetas exactas a los históricos y templates.
+  - Casing estándar en `nv4`: `"Depósitos a Plazo Fijo (Días)"`.
 - **`dags/conversion/sql/insert_conversion.sql`** y **`insert_conversion_status.sql`**:
   - Manejo seguro de `id_download`: `{% if id_download and id_download != 'None' %}'{{ id_download }}'{% else %}NULL{% endif %}`.
-- **Creación de archivos**:
+- **Archivos creados / verificados**:
   - `models/conversion/C_BO_000000418/__init__.py`.
   - `dags/conversion/C_BO_000000418.py`.
 

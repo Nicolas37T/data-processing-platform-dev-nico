@@ -17,16 +17,31 @@ class D_BO_000000418_02(Conversion_Base):
                     return ""
                 return str(value).strip()
 
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"File not found: {file_path}")
+
+            file_name = os.path.basename(file_path)
+
             def parse_report_date(df):
+                # 1. Extract from file_name if present
+                m_fn = re.search(r'(\d{4}-\d{2}-\d{2})', file_name)
+                if m_fn:
+                    return m_fn.group(1)
+                m_fn8 = re.search(r'(\d{8})', file_name)
+                if m_fn8:
+                    raw_date = m_fn8.group(1)
+                    return f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+
+                # 2. Extract from sheet content (supports same-month and cross-month weeks)
                 combined = " ".join(
                     " ".join(normalize_text(cell) for cell in row.tolist() if normalize_text(cell))
-                    for _, row in df.iterrows()
+                    for _, row in df.iloc[:15].iterrows()
                 )
-                match = re.search(r"(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})", combined, flags=re.IGNORECASE)
+                match = re.search(r"al\s+(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})", combined, flags=re.IGNORECASE)
                 if match:
-                    day = int(match.group(2))
-                    month_name = match.group(3).lower()
-                    year = int(match.group(4))
+                    day = int(match.group(1))
+                    month_name = match.group(2).lower()
+                    year = int(match.group(3))
                     month_map = {
                         "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5,
                         "junio": 6, "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9,
@@ -35,12 +50,7 @@ class D_BO_000000418_02(Conversion_Base):
                     month = month_map.get(month_name)
                     if month:
                         return f"{year:04d}-{month:02d}-{day:02d}"
-                return "2026-08-16"
-
-            if not os.path.exists(file_path):
-                raise FileNotFoundError(f"File not found: {file_path}")
-
-            file_name = os.path.basename(file_path)
+                return pd.Timestamp.now().strftime(format)
             excel = pd.ExcelFile(file_path)
             sheet_names = excel.sheet_names
             target_index = max(0, min(int(page_number) - 1, len(sheet_names) - 1))
@@ -172,6 +182,16 @@ class D_BO_000000418_02(Conversion_Base):
             if start_row is None:
                 raise ValueError("No data rows were identified in the report")
 
+            group_mapping = {
+                "BANCOS MÚLTIPLES": "Bancos Múltiples",
+                "BANCOS MULTIPLES": "Bancos Múltiples",
+                "ENTIDADES ESPECIALIZADAS EN MICROFINANZAS": "Entidades Especializadas en Microfinanzas",
+                "BANCOS PYME": "Bancos PYME",
+                "ENTIDADES FINANCIERAS DE VIVIENDA": "Entidades Financieras de Vivienda",
+                "COOPERATIVAS": "Cooperativas",
+                "INSTITUCIONES FINANCIERAS DE DESARROLLO": "Instituciones Financieras de Desarrollo",
+            }
+
             for idx in range(start_row, len(raw_df)):
                 row = raw_df.iloc[idx].tolist()
                 valid_cells = [normalize_text(cell) for cell in row if normalize_text(cell)]
@@ -219,7 +239,7 @@ class D_BO_000000418_02(Conversion_Base):
                             nv4 = "Caja de Ahorro"
                             nv5 = "Sin Plazo"
                         else:
-                            nv4 = "Depósitos a plazo fijo (días)"
+                            nv4 = "Depósitos a Plazo Fijo (Días)"
                             period_index = pos - 2
                             nv5 = periods[min(period_index, len(periods) - 1)]
                     else:
@@ -228,12 +248,12 @@ class D_BO_000000418_02(Conversion_Base):
                             nv4 = "Caja de Ahorro"
                             nv5 = "Sin Plazo"
                         else:
-                            nv4 = "Depósitos a plazo fijo (días)"
+                            nv4 = "Depósitos a Plazo Fijo (Días)"
                             period_index = pos - 11
                             nv5 = periods[min(period_index, len(periods) - 1)]
 
                     records.append({
-                        "nv1": current_group,
+                        "nv1": group_mapping.get(current_group.strip().upper(), current_group.strip().title()),
                         "nv2": bank_name,
                         "nv3": currency_name,
                         "nv4": nv4,

@@ -67,11 +67,11 @@ class D_BO_000000418_01(Conversion_Base):
                 }
                 for _, row in df_raw.iloc[:10].iterrows():
                     combined = " ".join(str(c).strip() for c in row if pd.notna(c))
-                    m_date = re.search(r"(\d{1,2})\s+al\s+(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})", combined, re.IGNORECASE)
+                    m_date = re.search(r"al\s+(\d{1,2})\s+de\s+([A-Za-zÀ-ÿ]+)\s+de\s+(\d{4})", combined, re.IGNORECASE)
                     if m_date:
-                        d_val = int(m_date.group(2))
-                        m_str = m_date.group(3).lower()
-                        y_val = int(m_date.group(4))
+                        d_val = int(m_date.group(1))
+                        m_str = m_date.group(2).lower()
+                        y_val = int(m_date.group(3))
                         if m_str in month_map:
                             fecha = f"{y_val:04d}-{month_map[m_str]:02d}-{d_val:02d}"
                             break
