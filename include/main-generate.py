@@ -5,11 +5,13 @@ import shutil
 import fileinput
 import pandas as pd
 from typing import List
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from console import info_print, error_print, success_print
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 process_dict = {
     'download': {
@@ -184,7 +186,9 @@ def get_second_choose(process: str):
 
 
 class RobotCodeHandler:
+
     BASE_PATH = '/opt/airflow/' if os.path.exists('/opt/airflow/include/dag_template.py') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
     DATA_BASE = 'platform_db'
 
     def __init__(self, process: str, product_template: str = None):
@@ -194,15 +198,15 @@ class RobotCodeHandler:
         self._get_db_con()
 
     def _get_db_con(self):
-        host = os.getenv("BUSINESS_DB_HOST")
-        port = os.getenv("BUSINESS_DB_PORT")
-        user = os.getenv("BUSINESS_DB_USER")
-        password = os.getenv("BUSINESS_DB_PASSWORD")
-        database = os.getenv("BUSINESS_DB_DATABASE")
+        host = os.getenv("BUSINESS_DB_HOST", "10.0.0.16")
+        port = os.getenv("BUSINESS_DB_PORT", "5434")
+        user = os.getenv("BUSINESS_DB_USER", "postgres")
+        password = os.getenv("BUSINESS_DB_PASSWORD", "datax")
+        database = os.getenv("BUSINESS_DB_DATABASE", "platform_db")
         self.engine = create_engine(f'postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}')
 
     def process_codes(self, codes_input):
-        country = os.getenv("COUNTRY")
+        country = os.getenv("COUNTRY", "BO")
         sql_query = process_dict[self.process]['sql_query']
         prefix = process_dict[self.process]['prefix']
 

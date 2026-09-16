@@ -1,110 +1,110 @@
-import os
-import shutil
-import traceback
-import re
-from typing import List, Dict
-
-import pandas as pd
+import traceback, os,re, shutil
 from playwright.sync_api import sync_playwright
-
-from models.download.Download_Base import Download_Base
+import pandas as pd
+from functools import reduce
 from models.download.tools.download_tools import format_date
-
+from models.download.Download_Base import Download_Base
 
 class D_BO_000000255(Download_Base):
-    """
-    Type III Download Robot for adascz.com.bo.
-    Responsible for scraping reference prices, building an exact visual replica
-    of the web table, and returning metadata following DATAX architecture rules.
-    """
 
-    def check_new_data(
-        self, 
-        main_url: str, 
-        updated_to: str, 
-        path: str, 
-        key_words: str, 
-        format: str = '%Y-%m-%d'
-    ) -> List[Dict]:
-        
-        try:
-            # 1. STATELESS ENFORCEMENT
-            tmp_dir = os.path.join(path, 'tmp')
-            if os.path.exists(tmp_dir):
-                shutil.rmtree(tmp_dir)
-            os.makedirs(tmp_dir)
+    def check_new_data(self, main_url, updated_to,path,key_words, format='%Y-%m-%d'):
+        """
+        Extracts data from the main_url dated after update_to date.
 
-            extracted_date_str = ""
+        Parameters:
+            main_url (str): The URL of the main page.
+            updated_to (str): The latest date for which the database contains records.
+            path (str): The directory path to store temporary files.
+            key_words (str): A string used to name the CSV file.
+            format (str): The format of the dates. Default is '%Y-%m-%d'.
+
+        Returns:
+            list: A list of dictionaries containing information about the extracted data.
+        """
+
+        with sync_playwright() as pl:
+            # Convert updated_to string to datetime object
+            updated_to = format_date(updated_to)
             
-            # 2. PLAYWRIGHT NAVIGATION & DATA EXTRACTION
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True) 
-                context = browser.new_context()
+            # Regular expression to find dates in text
+            re_date = r'\d{1,2}.?\d{1,2}.?\d{4}'
+
+            # XPath to locate elements
+            rows_xpath = '//div[@class="moduletable _tabla_precios"]//tbody/tr'
+
+            # Erase the previous tmp path and create the a new one 
+            path = os.path.join(path, 'tmp')
+            if os.path.exists(path):
+                shutil.rmtree(path)
+            os.makedirs(path)
+
+            try:
+                # Launch browser and navigate to main URL
+                print(f"Launching browser and navigating to {main_url} ...")
+                browser = pl.chromium.launch()
+                context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36')
                 page = context.new_page()
-                
                 page.goto(main_url, wait_until='domcontentloaded')
-                page.wait_for_selector('div.tit-precios', timeout=10000)
-
-                # Extract the full title box (Green Box)
-                title_box = page.locator('div.tit-precios').inner_text().strip().replace('\n', ' ')
                 
-                # Date extraction for idempotency
-                match = re.search(r'(\d{2}-\d{2}-\d{4})', title_box)
-                if match:
-                    raw_date = match.group(1)
-                    day, month, year = raw_date.split('-')
-                    extracted_date_str = f"{year}-{month}-{day}"
-                else:
-                    extracted_date_str = pd.Timestamp.now().strftime(format)
+                # Extract the date from the page
+                date = page.query_selector('//div[@class="tit-precios"]').inner_text()
+                date = re.search(re_date,date).group()
 
-                # 3. IDEMPOTENCY CHECK
-                if extracted_date_str <= updated_to:
-                    browser.close()
+                # Format the extracted date
+                data_date = format_date(date,format='%d-%m-%Y')
+                print(updated_to,data_date)
+                # Check if there is new data available
+                if data_date <= updated_to:
+                    print(f"There is no data after the date: {updated_to.strftime(format=format)}")
                     return []
+                
+                # Extract data rows
+                rows = page.query_selector_all(rows_xpath)
+                rows.pop(2)
 
-                # 4. RAW DATA GRID EXTRACTION (Visual Replica)
-                rows = page.locator('table tr')
+                # Extract cell data from each row
+                rows = [row.query_selector_all("td") for row in rows]
+                rows = [[i.inner_text() for i in row] for row in rows]
+                
+                # Flatten the rows into a single list and prepend the date
+                data_rows = [data_date.strftime(format=format)] + reduce(lambda x,y: x+y,rows)
+                data_rows = [data_rows]
+                print(data_rows)
+                # Define column headers
+                columns = ['Fecha','Precio del Pollo', 'Precio Gallina Descarte', 'Precio del Huevo (EXT)', 'Precio del Huevo (1RA)', 'Precio del Huevo (2DA)', 'Precio del Huevo (3RA)', 'Precio del Huevo (4TA)']
 
-                # Pollo (Row 0)
-                pollo_h = rows.nth(0).locator('th, td').nth(0).inner_text().strip().replace('\n', ' ')
-                pollo_v = rows.nth(0).locator('th, td').nth(1).inner_text().strip().replace('\n', ' ')
+                # Create a DataFrame and save it to an Excel file
+                df = pd.DataFrame(data_rows,columns=columns)
+                file_path = os.path.join(path,f"{key_words}.xlsx")
+                df.to_excel(file_path,index=False,)
+                print("Data was extracted.")
 
-                # Gallina (Row 1)
-                gallina_h = rows.nth(1).locator('th, td').nth(0).inner_text().strip().replace('\n', ' ')
-                gallina_v = rows.nth(1).locator('th, td').nth(1).inner_text().strip().replace('\n', ' ')
+                # Return information about the extracted data
+                return [{
+                    "tmp_path":file_path,
+                    "updated_to":data_date.strftime(format=format),
+                    "download_url":'-',
+                }]           
 
-                # Huevo (Row 2 & 3)
-                huevo_h = rows.nth(2).locator('th, td').nth(0).inner_text().strip().replace('\n', ' ')
-                huevo_sub_h = [h.strip() for h in rows.nth(2).locator('td').all_inner_texts()]
-                huevo_vals = [v.strip() for v in rows.nth(3).locator('td').all_inner_texts()]
+            except Exception as e:
+                print(f"An error ocurred: {e}")
+                traceback.print_exc()
+                return []
+            finally:
+                # Close page and browser
+                if 'page' in locals():
+                    page.close()
+                if 'browser' in locals():
+                    browser.close()
 
-                browser.close()
+if __name__ == "__main__":
+    robot = Executor_D_BO_000000255()
+    
+    x = robot.check_new_data(main_url="https://www.adascz.com.bo/",updated_to="2024-02-12",path = r'D:\DATAX\data-processing-platform\models\download\D_BO_000000255', key_words="precio productores")
+    print(x)
+#     # y = robot.compare_files(files_paths=[{"tmp_path": r"C:\Users\Kevin Padilla\Downloads\01.03.xlsx"}],updated_to="2023-01-21")
+#     # print(y)
+#     robot.verify_url("https://www.adascz.com.bo/")
 
-            # 5. DATASET CONSTRUCTION (2D Matrix matching the HTML Table)
-            grid = [
-                [title_box, "", "", "", "", ""],
-                [pollo_h, pollo_v, "", "", "", ""],
-                [gallina_h, gallina_v, "", "", "", ""],
-                [huevo_h] + huevo_sub_h,
-                [""] + huevo_vals
-            ]
-            
-            df_raw = pd.DataFrame(grid)
-            
-            # Save raw dataset as an Excel file (.xlsx) to preserve grid structure perfectly
-            file_name = f"{key_words}_{extracted_date_str.replace('-', '')}.xlsx"
-            tmp_path = os.path.join(tmp_dir, file_name)
-            
-            # Write to Excel without headers or index
-            df_raw.to_excel(tmp_path, index=False, header=False)
-
-            # 6. XCOM RULE
-            return [{
-                "tmp_path": tmp_path,
-                "updated_to": extracted_date_str,
-                "download_url": "-" 
-            }]
-
-        except Exception:
-            traceback.print_exc()
-            return []
+Executor_D_BO_000000255 = D_BO_000000255
+Robot = D_BO_000000255

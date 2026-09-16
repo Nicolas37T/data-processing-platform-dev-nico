@@ -4,11 +4,13 @@ import shutil
 import fileinput
 import pandas as pd
 from typing import List
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from console import info_print, error_print, success_print
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 # List of available processes
 process_dict = {
     'download':{
