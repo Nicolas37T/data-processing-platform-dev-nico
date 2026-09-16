@@ -47,4 +47,3 @@ venv/
 # Ignore xlsx, sqlite, pdf files
 *xlsx
 *pdf
-*sqlite
