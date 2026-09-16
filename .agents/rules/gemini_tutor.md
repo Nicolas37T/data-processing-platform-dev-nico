@@ -18,55 +18,48 @@ Para garantizar un flujo de trabajo ágil, rápido y con consumo mínimo de toke
 
 ---
 
-## 📋 Flujo Ágil en 5 Pasos para Construir Robots de Conversión
+## 📋 Flujo Ágil para Robots de Conversión
 
-Cuando el desarrollador solicite ayuda con un reporte:
-
-### Paso 1: Diagnóstico de la Fuente
-- Solicitar el código del reporte (ej. `D_BO_000000270_01`) y el archivo de muestra.
-- Inspeccionar la estructura e identificar los niveles con el esquema mental de colores:
-  - **Naranja**: Total General (`nv1`).
-  - **Celestes**: Sectores / Agrupadores mayores (`nv2`).
-  - **Verdes**: Entidades o Subsectores (`nv3`).
-  - **Amarillos**: Instrumentos / Hojas (`nv4`, `nv5`).
-
-### Paso 2: Implementación en `robot.py`
+Cuando el desarrollador diga **"hola quiero crear la conversión para [CÓDIGO]"**:
+- Ir **directo al código**: Solicitar archivo muestra o inspeccionar la fuente.
 - Asegurar la **Regla Estricta de 2 Métodos**:
   1. `extraction()`
-  2. `validate_data_results()`
-- ❌ **PROHIBIDO `__init__`** o métodos auxiliares con `self`. Funciones de apoyo van anidadas dentro de `extraction()` o a nivel de módulo.
-- Normalización numérica con `from conversion_tools import to_numeric_datax`.
+  2. `validate_data_results()` (retorna `False` si cuadra, `True` si hay error).
+- ❌ **PROHIBIDO `__init__`** o métodos con `self._...`.
+- Normalización numérica con `to_numeric_datax`.
+- Entregar en una sola respuesta:
+  1. Código completo de `robot.py`.
+  2. Comandos de prueba: `python validate_robot.py --type conversion --file "..."`.
+  3. Comandos de `git add/commit/push`.
 
-### Paso 3: Reconciliación en `validate_data_results()`
-- Implementar la validación matemática: verificar que para cada fecha, la suma de los componentes amarillos equivalga al Total General naranja dentro de `TOLERANCE=6.0`.
-- Retornar `False` si cuadra (sin error), o `True` si hay discrepancia.
+---
 
-### Paso 4: Pruebas y Validación Automática
-- Indicar al desarrollador que ejecute:
-  ```bash
-  python validate_robot.py --type conversion --file "<archivo_muestra>"
-  python -m unittest test_conversion.py
-  ```
+## 📥 Flujo Ágil para Robots de Descarga
 
-### Paso 5: Publicación en Git (`subir-al-git`)
-- Asistir al desarrollador para renombrar la rama asignada de `origin` a `<nombre>/<CODIGO_REPORTE>`, commitear, hacer push y entregar el enlace del Pull Request hacia `main`.
+Cuando el desarrollador diga **"hola quiero crear la descarga para [CÓDIGO]"**:
+- Ir **directo al código**: Inspeccionar URL o API.
+- Implementar los 3 métodos obligatorios:
+  1. `get_file_url()`
+  2. `compare_files()`
+  3. `verify_url()`
+- Entregar en una sola respuesta:
+  1. Código completo de `robot.py`.
+  2. Comandos de prueba: `python validate_robot.py --type download --url "..."`.
+  3. Comandos de `git add/commit/push`.
 
 ---
 
 ## 🚚 Flujo Ágil para Construir Robots y DAGs de Migración
 
-Cuando se trabaje en la etapa de Migración (`models/migration/M_...`):
-
-### Paso 1: Inspección de Metadatos de SQLite y Estado Inicial
-- Leer el `.sqlite` generado por Conversión (`D_..._XX.sqlite`) para identificar columnas jerárquicas (`nv1..nvN`), fechas y el factor de escala de la métrica original.
-- **Estado Inicial en `platform_db`:** Si el reporte nunca ha sido migrado en V2 (`public.migration` vacía), resetear obligatoriamente `UPDATE report SET migrated_to = NULL WHERE code = '...'` si arrastraba fechas viejas de la base anterior.
-
-### Paso 2: Creación de DDL PostgreSQL (`.sql`)
-- Definir la tabla con `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`.
-- Agregar columnas de control: `fecha_creacion`, `fecha_modificacion`, `observations`.
-- Agregar columnas de métricas: `metrica`, `unidad_metrica`.
-- Crear función y trigger `actualizar_fecha_modificacion()` usando `CREATE OR REPLACE TRIGGER`.
-- ❌ **PROHIBIDO `WITH (OIDS=FALSE)`**.
+Cuando el desarrollador diga **"hola quiero crear un dag de migración para [CÓDIGO]"**:
+- Ir **directo al grano**: NO dar explicaciones teóricas ni pasos previos innecesarios.
+- Inspeccionar la conversión del reporte en `models/conversion/C_.../`.
+- Crear de inmediato los **únicos 2 archivos obligatorios** (`.sql` y `.py` en `models/migration/M_.../`).
+- Entregar en una sola respuesta:
+  1. Confirmación de archivos creados.
+  2. Comando `git add/commit/push`.
+  3. Comando de `main-generate.py` en el servidor.
+  4. Comando universal `docker exec ... bash -c 'LAST_SQLITE=...'` para disparar sobre el último `.sqlite`.
 
 ### Paso 3: Implementación en Python (`.py`)
 - Heredar de `Migration_Base` y alias `Robot = D_...`.
