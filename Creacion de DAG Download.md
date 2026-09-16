@@ -59,9 +59,12 @@ Edita `models/download/D_BO_000000462/D_BO_000000462.py` aplicando los estándar
    - **`get_file_url(self, main_url, updated_to, ...)`**:
      - Localiza los enlaces en la web.
      - **Debe retornar una lista de URLs en string**: `list[str]`.
+     - ⚠️ **URLs siempre absolutas**: Usa siempre `from urllib.parse import urljoin` para concatenar (`urljoin(base_url, href)`). URLs relativas (ej. `/sites/...`) provocan fallo inmediato en las pruebas unitarias (`is_valid_url`) y en la descarga.
+     - ⚠️ **Cuidado con selectores XPath en Playwright**: Nunca uses `row.query_selector('//a')` dentro de una fila, pues en XPath `//` evalúa desde la raíz de todo el documento. Usa selectores CSS como `row.query_selector('a')` o XPath relativo `.//a`.
    - **`compare_files(self, files_paths, updated_to, format='%Y-%m-%d')`**:
      - Extrae la fecha del archivo descargado y compara contra `updated_to`.
-     - Si hay archivo nuevo, **debe retornar una lista de diccionarios**:
+     - ⚠️ **Extracción de fecha resiliente**: Evita `.split('.')` o delimitadores fijos. Usa expresiones regulares por grupos como `r"(\d{1,2})\D+(\d{1,2})\D+(\d{4})"` para capturar `(día, mes, año)` sin importar si el archivo usa guiones `-`, barras `/` o puntos `.`.
+     - Si hay archivo nuevo, **debe retornar una lista de diccionarios** con estas 3 claves exactas:
        ```python
        return [{
            'tmp_path': file_path,
@@ -71,6 +74,8 @@ Edita `models/download/D_BO_000000462/D_BO_000000462.py` aplicando los estándar
        ```
      - Si NO hay archivos nuevos o el archivo no es más reciente que `updated_to`:
        👉 **DEBE RETORNAR `False`** (🚫 *nunca retornar lista vacía `[]`*).
+4. **Archivo `__init__.py` obligatorio:**
+   Crea siempre un `__init__.py` vacío dentro de `models/download/<CODIGO>/` para asegurar la importación de módulos en cualquier entorno.
 
 ---
 

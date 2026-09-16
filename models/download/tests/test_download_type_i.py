@@ -8,8 +8,8 @@ from sqlalchemy import create_engine
 from urllib.parse import urlparse
 from models.download.tools.download_tools import format_date
 
-CODE_ROBOT = 'D_BO_000000419'
-UPDATED_TO = '2026-08-01'
+CODE_ROBOT = 'D_BO_000000270'
+UPDATED_TO = '2026-06-30'
 
 def get_executor(code):    
     try:

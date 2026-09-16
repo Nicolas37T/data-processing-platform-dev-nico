@@ -109,7 +109,7 @@ def create_dag(dag, connection_id, id_dag=None):
         executor = get_executor(code=code)
         db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}")
         with db_conn.connect() as conn:
-            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {storage_table[0]}"))
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{storage_table[0]}"'))
             conn.commit()
         inspector = inspect(db_conn)
         table_exists = inspector.has_table(storage_table[1], schema=storage_table[0])
@@ -190,6 +190,13 @@ def create_dag(dag, connection_id, id_dag=None):
         print(load_metadata['num_records'])
 
         if num_records_added == load_metadata['num_records']:
+            converted_to = ti.xcom_pull(key='converted_to', task_ids='pre_load')
+            try:
+                from templates.dag_metadata_updater import update_dag_tag_and_doc
+                dag_migration_id = id_dag or '_'.join(re.sub('D_', 'M_', code).split('_')[:-1])
+                update_dag_tag_and_doc(dag_migration_id, 'migration', converted_to)
+            except Exception as e:
+                print(f"Warning: Could not update migration DAG metadata tag: {e}")
             return 'record_migration'
 
         return 'notify_post_load_error'

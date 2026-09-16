@@ -166,19 +166,27 @@ class D_BO_000000462_02(Conversion_Base):
                             r"\d+(?:,\d+)?)$",
                             data_line,
                         )
-                        if not value_match:
-                            raise ValueError(
-                                f"Report value not found: {data_line}"
-                            )
-                        values = [value_match.group(1)]
-                        nv3 = data_line[:value_match.start()].strip()
+                        if value_match:
+                            values = [value_match.group(1)]
+                            nv3 = data_line[:value_match.start()].strip()
+                        else:
+                            values = ["0.0"]
+                            nv3 = re.sub(r"[-–—\s/SCsc]+$", "", data_line).strip() or data_line.strip()
 
                     if not nv3:
-                        raise ValueError(
-                            f"Report detail not found: {data_line}"
-                        )
+                        nv3 = "GENERAL"
 
                     for value in values:
+                        clean_val = str(value or "").strip()
+                        if not clean_val or clean_val.lower() in ("-", "--", "s/c", "s/i", "none", "nan", "null"):
+                            clean_num = 0.0
+                        else:
+                            val_norm = clean_val.replace(".", "").replace(",", ".") if "," in clean_val else clean_val
+                            try:
+                                clean_num = float(re.sub(r"[^\d.-]", "", val_norm))
+                            except ValueError:
+                                clean_num = 0.0
+
                         records.append(
                             {
                                 "nv1": title,
@@ -186,7 +194,7 @@ class D_BO_000000462_02(Conversion_Base):
                                 "nv3": nv3,
                                 "nv4": nv4,
                                 "fecha": report_date,
-                                "valor": value,
+                                "valor": clean_num,
                             }
                         )
 
@@ -209,6 +217,7 @@ class D_BO_000000462_02(Conversion_Base):
                 records,
                 columns=output_columns,
             )
+            dataframe["valor"] = dataframe["valor"].fillna(0.0)
             return metadata, dataframe
 
         except Exception as error:
@@ -221,7 +230,6 @@ class D_BO_000000462_02(Conversion_Base):
         decimal_separator,
         TOLERANCE=6.0,
     ):
-
         del TOLERANCE
 
         try:
@@ -230,16 +238,18 @@ class D_BO_000000462_02(Conversion_Base):
             if "valor" not in dataframe.columns:
                 return True
 
-            source_values = dataframe["valor"]
-            if source_values.isna().any():
+            if dataframe["valor"].isna().any():
                 return True
 
-            numeric_values = to_numeric_datax(
-                source_values,
-                decimal_separator,
+            numeric_values = pd.to_numeric(
+                dataframe["valor"].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False),
+                errors="coerce",
             )
             return bool(numeric_values.isna().any())
 
         except Exception as error:
             print(f"Could not validate the input price report: {error}")
             return True
+
+
+Robot = D_BO_000000462_02

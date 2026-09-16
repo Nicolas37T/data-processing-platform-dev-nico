@@ -268,3 +268,7 @@ class D_BO_000000481_01(Conversion_Base):
             print(f"Could not validate data results: {error}")
             traceback.print_exc()
             return True
+
+
+Robot = D_BO_000000481_01
+

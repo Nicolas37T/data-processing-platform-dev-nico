@@ -111,3 +111,7 @@ class D_BO_000000255_01(Conversion_Base):
         except Exception:
             traceback.print_exc()
             return True
+
+
+Robot = D_BO_000000255_01
+

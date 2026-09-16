@@ -43,6 +43,18 @@ class D_BO_000000462_01(Conversion_Base):
                 if key_words and not search_key_words(page_text, key_words):
                     raise ValueError(f"No tables found matching keywords: {key_words}")
 
+                def clean_numeric(val):
+                    if val is None:
+                        return 0.0
+                    val_str = re.sub(r"\d{1,2}/\d{1,2}/\d{2,4}", "", str(val)).replace(",", ".").strip()
+                    if not val_str or val_str.lower() in ("-", "--", "s/c", "s/i", "none", "nan", "null"):
+                        return 0.0
+                    val_clean = re.sub(r"[^\d.-]", "", val_str)
+                    try:
+                        return float(val_clean)
+                    except ValueError:
+                        return 0.0
+
                 rows = []
                 for pdf_table in page.find_tables():
                     source_table = pdf_table.extract()
@@ -77,41 +89,32 @@ class D_BO_000000462_01(Conversion_Base):
                         expected_markets.append("PROMEDIO")
                     for row_index, source_row in enumerate(source_table[header_index + 1:]):
                         market = str(source_row[0] or "").strip()
-                        if not market:
-                            if row_index < len(expected_markets):
-                                market = expected_markets[row_index]
-                            else:
-                                market = "PROMEDIO"
-                        if market.upper().startswith("PROMEDIO"):
-                            market = "PROMEDIO"
+                        if not market and row_index < len(expected_markets):
+                            market = expected_markets[row_index]
+                        cur_avg = clean_numeric(source_row[3] if len(source_row) > 3 else None)
+
+                        if str(market).upper().startswith("PROMEDIO"):
+                            if cur_avg > 0:
+                                rows.append([
+                                    heading, "MERCADOS", "PROM.", "PROMEDIO",
+                                    date_value.strftime(format), cur_avg,
+                                ])
+                            continue
+
+                        min_val = clean_numeric(source_row[1] if len(source_row) > 1 else None)
+                        max_val = clean_numeric(source_row[2] if len(source_row) > 2 else None)
+                        prev_avg = clean_numeric(source_row[4] if len(source_row) > 4 else None)
+                        daily_variation = round(cur_avg - prev_avg, 2)
+
                         statistics = [
-                            ("MÍN.", source_row[1], date_value),
-                            ("MÁX.", source_row[2], date_value),
-                            ("PROM.", source_row[3], date_value),
-                            ("PROM.", source_row[4], previous_date),
-                            ("VAR. DIARIA", None, date_value),
+                            ("MÍN.", min_val, date_value),
+                            ("MÁX.", max_val, date_value),
+                            ("PROM.", cur_avg, date_value),
+                            ("PROM.", prev_avg, previous_date),
+                            ("VAR. DIARIA", daily_variation, date_value),
                         ]
-                        current_average = re.sub(
-                            r"\d{1,2}/\d{1,2}/\d{2,4}", "", str(source_row[3] or "")
-                        ).replace(",", ".").strip()
-                        previous_average = re.sub(
-                            r"\d{1,2}/\d{1,2}/\d{2,4}", "", str(source_row[4] or "")
-                        ).replace(",", ".").strip()
-                        try:
-                            daily_variation = float(current_average) - float(previous_average)
-                        except ValueError:
-                            daily_variation = None
-                        statistics[-1] = ("VAR. DIARIA", daily_variation, date_value)
+
                         for statistic, value, row_date in statistics:
-                            if value is None and statistic != "VAR. DIARIA":
-                                continue
-                            if statistic == "VAR. DIARIA" and daily_variation is None:
-                                continue
-                            value = re.sub(r"\d{1,2}/\d{1,2}/\d{2,4}", "", str(value or ""))
-                            if value is not None and str(value).strip():
-                                value = str(value).replace(",", ".").strip()
-                            else:
-                                value = None
                             rows.append([
                                 heading, "MERCADOS", statistic, market,
                                 row_date.strftime(format), value,
@@ -120,13 +123,15 @@ class D_BO_000000462_01(Conversion_Base):
                 for line in page.extract_text_lines():
                     text = re.sub(r"\s+", " ", line["text"]).strip()
                     producer_match = re.search(
-                        r"(P/A\s+\w+)\s+(\d+[,.]\d+)\s+(\d+[,.]\d+)\s+"
-                        r"(\d+[,.]\d+)\s+(\d+[,.]\d+)",
+                        r"(P/A\s+\w+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)",
                         text,
                         re.IGNORECASE,
                     )
                     if producer_match:
-                        minimum, maximum, current, previous = producer_match.groups()[1:]
+                        minimum = clean_numeric(producer_match.group(2))
+                        maximum = clean_numeric(producer_match.group(3))
+                        current = clean_numeric(producer_match.group(4))
+                        previous = clean_numeric(producer_match.group(5))
                         producer_date = date_value
                         producer_previous_date = previous_date
                         producer_values = [
@@ -134,16 +139,17 @@ class D_BO_000000462_01(Conversion_Base):
                             ("MÁX.", maximum, producer_date),
                             ("PROM.", current, producer_date),
                             ("PROM.", previous, producer_previous_date),
-                            ("VAR. DIARIA", float(current.replace(",", ".")) - float(previous.replace(",", ".")), producer_date),
+                            ("VAR. DIARIA", round(current - previous, 2), producer_date),
                         ]
                         for statistic, value, row_date in producer_values:
                             rows.append([
                                 "PRECIO REFERENCIAL DE POLLO VIVO AL PRODUCTOR (Bs./Kg.)",
-                                "TIPO DE POLLO", statistic, producer_match.group(1),
-                                row_date.strftime(format), value.replace(",", ".") if isinstance(value, str) else value,
+                                "TIPO DE POLLO", statistic, producer_match.group(1).upper(),
+                                row_date.strftime(format), value,
                             ])
 
             dataframe = pd.DataFrame(rows, columns=["nv1", "nv2", "nv3", "nv4", "fecha", "valor"])
+            dataframe["valor"] = dataframe["valor"].apply(clean_numeric)
 
             metadata = {
                 "file_name": os.path.basename(file_path),
@@ -173,7 +179,14 @@ class D_BO_000000462_01(Conversion_Base):
                 print(f"Validation failed: missing columns {sorted(missing_columns)}.")
                 return True
 
+            if dataframe["valor"].isna().any():
+                print("Validation failed: NaN values found in 'valor' column.")
+                return True
+
             return False
         except Exception:
             traceback.print_exc()
             return True
+
+
+Robot = D_BO_000000462_01

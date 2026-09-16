@@ -127,7 +127,19 @@ class D_BO_000000487_01(Conversion_Base):
 
                 period_str = f"Periodo de Cálculo: {p_desde} - {p_hasta}"
 
-                fecha_raw = row[7] if len(row) > 7 and row[7] is not None and not pd.isna(row[7]) else (row[0] if len(row) > 0 else None)
+                v_desde_raw = row[7] if len(row) > 7 else None
+                v_hasta_raw = row[8] if len(row) > 8 else None
+
+                v_desde = excel_date_to_str(v_desde_raw, format=format)
+                v_hasta = excel_date_to_str(v_hasta_raw, format=format)
+
+                vigencia_str = f"Vigencia: {v_desde} - {v_hasta}" if (v_desde and v_hasta) else ""
+
+                fecha_raw = row[8] if len(row) > 8 and row[8] is not None and not pd.isna(row[8]) else (
+                    row[7] if len(row) > 7 and row[7] is not None and not pd.isna(row[7]) else (
+                        row[0] if len(row) > 0 else None
+                    )
+                )
                 fecha_str = excel_date_to_str(fecha_raw, format=format)
                 if not fecha_str:
                     fecha_str = datetime.now().strftime(format)
@@ -137,14 +149,19 @@ class D_BO_000000487_01(Conversion_Base):
                         raw_val = row[c_idx]
                         if raw_val is not None and not pd.isna(raw_val):
                             val_num = float(raw_val) if isinstance(raw_val, (int, float)) else to_numeric_datax(pd.Series([raw_val]), decimal_separator=".").iloc[0]
-                            rows_list.append({
+                            row_dict = {
                                 "nv1": doc_titles[0],
                                 "nv2": subtitle,
                                 "nv3": period_str,
-                                "nv4": inst_name,
-                                "fecha": fecha_str,
-                                "valor": val_num,
-                            })
+                            }
+                            if vigencia_str:
+                                row_dict["nv4"] = vigencia_str
+                                row_dict["nv5"] = inst_name
+                            else:
+                                row_dict["nv4"] = inst_name
+                            row_dict["fecha"] = fecha_str
+                            row_dict["valor"] = val_num
+                            rows_list.append(row_dict)
 
             metadata = {
                 "file_name": os.path.basename(file_path),
@@ -173,3 +190,37 @@ class D_BO_000000487_01(Conversion_Base):
         except Exception:
             traceback.print_exc()
             return True
+
+    def report_data_validation(self, code, reviewed_files, path, publication_frequency, last_conversion_path, file_extension, mongo_client, decimal_separator):
+        converted_file = super().report_data_validation(
+            code=code,
+            reviewed_files=reviewed_files,
+            path=path,
+            publication_frequency=publication_frequency,
+            last_conversion_path=last_conversion_path,
+            file_extension=file_extension,
+            mongo_client=mongo_client,
+            decimal_separator=decimal_separator,
+        )
+        if file_extension == "sqlite" and converted_file and "conversion_path" in converted_file:
+            try:
+                import sqlite3
+                from models.conversion.tools.conversion_tools import convert_unix_path
+                sqlite_path = convert_unix_path(converted_file["conversion_path"])
+                if os.path.exists(sqlite_path):
+                    conn = sqlite3.connect(sqlite_path)
+                    cur = conn.cursor()
+                    cur.execute("DROP TABLE IF EXISTS columns_to_review")
+                    cur.execute("CREATE TABLE columns_to_review (column TEXT)")
+                    cur.executemany("INSERT INTO columns_to_review (column) VALUES (?)", [
+                        ("fecha",),
+                        ("nv1",),
+                        ("nv2",),
+                        ("nv5",),
+                    ])
+                    conn.commit()
+                    conn.close()
+            except Exception:
+                traceback.print_exc()
+        return converted_file
+

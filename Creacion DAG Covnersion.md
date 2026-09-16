@@ -75,7 +75,15 @@ Pega el código del freelancer en `models/conversion/C_BO_000000481/D_BO_0000004
        traceback.print_exc()
        return ""
    ```
-4. **Limpieza:** Eliminar `sys.path.append("..")` o rutas relativas manuales.
+4. **Limpieza e Imports Absolutos:** 
+   - Eliminar `sys.path.append("..")` o rutas relativas manuales.
+   - ⚠️ **Nunca usar** `from conversion_tools import ...`. Siempre importar desde el paquete completo: `from models.conversion.tools.conversion_tools import ...`.
+5. **Archivo `__init__.py` obligatorio:**
+   Crea siempre un `__init__.py` vacío en `models/conversion/C_.../` para que Airflow y unittest puedan cargar dinámicamente el módulo sin arrojar `ModuleNotFoundError`.
+6. **Estructura de Niveles (`nv1` hasta `nv5`):**
+   - El robot soporta de `nv1` hasta `nv5` según la granularidad jerárquica del reporte.
+   - Las columnas finales del DataFrame deben terminar en `fecha` y `valor`:
+     `[..., 'nv1', 'nv2', ..., 'fecha', 'valor']`.
 
 ---
 
@@ -269,6 +277,20 @@ docker exec data-processing-platform-dev-airflow-worker-1 airflow dags trigger C
 3. **Salta a `notify_structure_change` en vez de guardar el reporte:**
    Ocurre cuando las columnas del reporte nuevo no coinciden con las de la plantilla previa configurada en `converted_report_path` (ej. nombres antiguos de columnas o niveles diferentes).
    - **Solución:** Reemplazar el `.sqlite` de referencia en `/mnt/datos1/data_process/BO/D_BO_000000481/D_BO_000000481_01.sqlite` con el nuevo generado en el **Paso 8**, o fijar `converted_report_path = NULL` para la primera corrida.
+
+4. **`IndexError: list index out of range` en `_get_conversion_data`:**
+   Ocurre si al disparar el trigger manual se olvida pasar `"code"` en el diccionario `--conf`. La tarea `_get_conversion_data` ejecuta `SELECT ... WHERE r.code = %s` esperando el código del reporte (`D_BO_..._01`). Si falta, busca `NULL`, la consulta retorna 0 filas y `results[0]` arroja `IndexError`.
+   - **Solución:** Incluir siempre `"code": "<CODIGO_REPORTE>"` en el payload:
+     ```bash
+     --conf '{"code": "D_BO_000000270_01", "id_download": 1, "file": "..."}'
+     ```
+
+5. **`converted_to` (o `migrated_to`) permanece vacío (`NULL`) tras una ejecución exitosa:**
+   Ocurre si en `dags/conversion/sql/update_report.sql` la condición es `'fecha' > converted_to`. En PostgreSQL, `'fecha' > NULL` evalúa a `NULL` (falsy), afectando 0 filas.
+   - **Solución:** Asegurar que `update_report.sql` contenga la condición agrupada:
+     ```sql
+     AND ('{{ ti.xcom_pull(task_ids='report_data_validation', key='converted_file')['converted_to'] }}' > converted_to OR converted_to IS NULL);
+     ```
 
 ### Resultado esperado:
 - Todas las tareas principales en **Verde Oscuro (Success)**:

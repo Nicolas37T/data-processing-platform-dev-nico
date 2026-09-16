@@ -53,11 +53,17 @@ process_dict = {
         'db_table': 'report',
         'prefix': 'M',
         'sql_query': (
-            'SELECT r.code, s.short_name, s.name AS source_name '
+            'SELECT r.code, r.name AS report_name, r.migrated_to, r.storage_table, '
+            's.short_name, s.name AS source_name, '
+            'COALESCE(STRING_AGG(DISTINCT db.db_code, \', \'), \'\') AS dataset, '
+            'COALESCE(STRING_AGG(DISTINCT db.name, \' / \'), \'\') AS dataset_name '
             'FROM report r '
             'JOIN file f ON r.id_file = f.id_file '
             'JOIN source s ON f.id_source = s.id_source '
-            'WHERE r."isActive" = TRUE'
+            'LEFT JOIN data_base_report dbr ON dbr.report_code = r.code '
+            'LEFT JOIN data_base db ON db.db_code = dbr.db_code '
+            'WHERE 1=1 '
+            'GROUP BY r.code, r.name, r.migrated_to, r.storage_table, s.short_name, s.name'
         ),
     },
     'product': {
@@ -178,7 +184,7 @@ def get_second_choose(process: str):
 
 
 class RobotCodeHandler:
-    BASE_PATH = '/opt/airflow/'
+    BASE_PATH = '/opt/airflow/' if os.path.exists('/opt/airflow/include/dag_template.py') else os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
     DATA_BASE = 'platform_db'
 
     def __init__(self, process: str, product_template: str = None):
@@ -219,6 +225,17 @@ class RobotCodeHandler:
                 'key_words': lambda x: ', '.join(sorted(set(filter(None, x.dropna().astype(str))))),
                 'path_file': 'first',
                 'location': 'first',
+            }
+            df = df.groupby('code', as_index=False).agg(agg_dict)
+        elif self.process == 'migration':
+            agg_dict = {
+                'short_name': 'first',
+                'source_name': 'first',
+                'dataset': lambda x: ', '.join(sorted(set(filter(None, [s.strip() for item in x.dropna() for s in str(item).split(',')])))),
+                'dataset_name': lambda x: ' / '.join(sorted(set(filter(None, [s.strip() for item in x.dropna() for s in str(item).split('/')])))),
+                'report_name': lambda x: ' / '.join(sorted(set(filter(None, x.dropna().astype(str))))),
+                'storage_table': lambda x: ' / '.join(sorted(set(filter(None, x.dropna().astype(str))))),
+                'migrated_to': lambda x: max([d for d in x if pd.notna(d)], default=None),
             }
             df = df.groupby('code', as_index=False).agg(agg_dict)
         else:
@@ -291,6 +308,10 @@ class RobotCodeHandler:
                     kw_clean = key_words.split(',')[0].strip()
                     if kw_clean and kw_clean not in tags:
                         tags.append(kw_clean)
+            elif self.process == 'migration':
+                migrated_to = robot.get('migrated_to')
+                if migrated_to and str(migrated_to) != 'None':
+                    tags.append(str(migrated_to).strip())
 
             tags_str = ", ".join([f"'{t}'" for t in tags])
 
@@ -337,6 +358,18 @@ class RobotCodeHandler:
                     f"| **🔑 Palabras Clave** | {clean_val(robot.get('key_words'))} |\n"
                     f"| **📍 Ubicación** | {clean_val(robot.get('location'))} |\n"
                     f"| **💾 Ruta Almacén** | `{clean_path}` |\n"
+                )
+            elif self.process == 'migration':
+                doc_md_str = (
+                    f"## 🚚 DAG Migración: {robot['code']}\n\n"
+                    f"| Parámetro | Detalle |\n"
+                    f"|---|---|\n"
+                    f"| **🏛️ Fuente** | **{short_name}** ({source_name}) |\n"
+                    f"| **📊 Dataset(s)** | `{datasets_str}` |\n"
+                    f"| **📝 Nombre Dataset** | {dataset_name} |\n"
+                    f"| **📄 Sub-reporte(s)** | {clean_val(robot.get('report_name'))} |\n"
+                    f"| **🗄️ Tabla(s) Almacén** | `{clean_val(robot.get('storage_table'))}` |\n"
+                    f"| **📅 Última Migración** | **{clean_val(robot.get('migrated_to'))}** |\n"
                 )
             else:
                 doc_md_str = (

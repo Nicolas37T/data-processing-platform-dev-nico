@@ -204,3 +204,21 @@ open http://localhost:8080  # user: airflow / pass: airflow
 # Ejecutar un DAG manualmente
 docker-compose exec airflow-webserver airflow dags trigger D_PE_000000001
 ```
+
+---
+
+## Reglas Críticas para Agentes y Desarrolladores (Plataforma V2)
+
+### 📥 1. Robots de Descarga (`models/download/`)
+- **URLs Absolutas Obligatorias:** `get_file_url` debe retornar strings con URLs absolutas con esquema (`https://...`). Usar siempre `from urllib.parse import urljoin`.
+- **Selectores Playwright:** Dentro de una fila, usar siempre selectores relativos `row.query_selector('a')` o `.//a`. Nunca usar `//a` (evalúa desde la raíz del DOM completo).
+- **Retorno de `compare_files`:** Debe retornar `[{'tmp_path': ..., 'updated_to': ..., 'download_url': ...}]` o estrictamente **`False`** si no hay novedades (🚫 nunca lista vacía `[]`).
+- **Paquete Python:** Crear siempre `__init__.py` en `models/download/<CODIGO>/`.
+
+### 🔄 2. Robots de Conversión (`models/conversion/`)
+- **Imports Absolutos:** Siempre importar herramientas como `from models.conversion.tools.conversion_tools import ...`. Nunca usar `from conversion_tools import ...`.
+- **Paquete Python:** Crear siempre `__init__.py` en `models/conversion/C_<CODIGO>/`.
+- **Trigger Manual en Airflow (`--conf`):** El JSON en `--conf` **DEBE** incluir `"code"` (ej. `'{"code": "D_BO_..._01", "id_download": 1, "file": "..."}'`). Si falta `"code"`, la tarea `_get_conversion_data` arroja `IndexError: list index out of range`.
+- **Condición SQL de Actualización:** `dags/conversion/sql/update_report.sql` y `dags/migration/sql/update_report.sql` deben contener `OR converted_to IS NULL` (y `OR migrated_to IS NULL`) para que los registros nuevos no ignoren la primera actualización.
+- **Estructura de Control (`columns_to_review`):** En el SQLite plantilla, registrar todas las columnas fijas o jerárquicas categóricas (`fecha`, `nv1` hasta `nvN`).
+

@@ -1,4 +1,4 @@
-"""Conversion robot for BCB open market operation balances."""
+"""Conversion robot for BCB public securities and financing balances."""
 
 import os
 import re
@@ -11,14 +11,11 @@ from openpyxl import load_workbook
 from unidecode import unidecode
 
 from models.conversion.Conversion_Base import Conversion_Base
-from models.conversion.tools.conversion_tools import (
-    get_xlsx_report_dataframe,
-    to_numeric_datax,
-)
+from models.conversion.tools.conversion_tools import to_numeric_datax
 
 
 class D_BO_000000419_04(Conversion_Base):
-    """Convert BCB open market operation and financing balances."""
+    """Convert BCB public securities and financing balances."""
 
     def extraction(
         self,
@@ -28,6 +25,7 @@ class D_BO_000000419_04(Conversion_Base):
         page_number=1,
         format="%Y-%m-%d",
     ):
+        """Extract the target section and its latest daily week."""
         del template_path
 
         try:
@@ -46,24 +44,22 @@ class D_BO_000000419_04(Conversion_Base):
                     "The configured keywords do not match the report."
                 )
 
-            report = get_xlsx_report_dataframe(
-                file_path=file_path,
-                key_words="mercado abierto financiamiento",
-                page_number=page_number,
-            )
-            if not report:
-                raise ValueError("The target BCB table was not found.")
+            excel_file_obj = pd.ExcelFile(file_path)
+            sheet_idx = (page_number - 1) if (0 <= page_number - 1 < len(excel_file_obj.sheet_names)) else 0
+            found_page_number = sheet_idx + 1
+            raw_dataframe = pd.read_excel(file_path, sheet_name=sheet_idx, header=None)
 
-            raw_dataframe, found_page_number = report
             workbook = load_workbook(file_path, data_only=True)
-            worksheet = workbook.worksheets[found_page_number - 1]
+            worksheet = workbook.worksheets[sheet_idx]
 
             section_row = None
             section_column = None
             section_title = (
-                "Operaciones de mercado abierto y financiamiento del BCB "
+                "Operaciones con títulos públicos y financiamiento del BCB "
                 "(saldos)"
             )
+            document_title = "INFORMACIÓN ESTADÍSTICA SEMANAL (p)"
+
             for row_index, row in raw_dataframe.iterrows():
                 for column in raw_dataframe.columns:
                     value = row[column]
@@ -72,7 +68,6 @@ class D_BO_000000419_04(Conversion_Base):
                     normalized_value = unidecode(str(value)).lower()
                     required_terms = (
                         "operaciones",
-                        "mercado abierto",
                         "financiamiento",
                         "bcb",
                         "saldos",
@@ -168,7 +163,32 @@ class D_BO_000000419_04(Conversion_Base):
                     "Daily columns for the latest week were not found."
                 )
 
-            levels = ["-", "-", "-", "-"]
+            # Opción A: Si la última semana desglosada tiene menos de 5 días
+            # (ej. inicio de mes o semana incompleta), incluir la columna de la semana anterior
+            if len(date_columns) < 5:
+                first_daily_col = min(date_columns)
+                prev_col = first_daily_col - 1
+                found_prev_col = None
+                found_prev_date = None
+
+                while prev_col >= 0:
+                    for r_check in (date_row, week_row):
+                        val_candidate = raw_dataframe.at[r_check, prev_col]
+                        if not pd.isna(val_candidate):
+                            parsed_prev = pd.to_datetime(val_candidate, errors="coerce")
+                            if not pd.isna(parsed_prev):
+                                found_prev_col = prev_col
+                                found_prev_date = parsed_prev.strftime(format)
+                                break
+                    if found_prev_col is not None:
+                        break
+                    prev_col -= 1
+
+                if found_prev_col is not None and found_prev_col not in date_columns:
+                    date_columns.insert(0, found_prev_col)
+                    date_values[found_prev_col] = found_prev_date
+
+            levels = ["", "", "", ""]
             records = []
             for row_index in range(section_row + 1, section_end_row):
                 raw_label = raw_dataframe.at[row_index, variable_column]
@@ -214,69 +234,69 @@ class D_BO_000000419_04(Conversion_Base):
 
                 levels[depth] = label
                 for deeper_level in range(depth + 1, len(levels)):
-                    levels[deeper_level] = "-"
+                    levels[deeper_level] = ""
 
                 for column in date_columns:
                     source_value = raw_dataframe.at[row_index, column]
                     if pd.isna(source_value):
-                        raise ValueError(
-                            f"Missing value for {label} on "
-                            f"{date_values[column]}."
+                        normalized_value = pd.NA
+                    else:
+                        source_cell = worksheet.cell(
+                            row=row_index + 1,
+                            column=column + 1,
+                        )
+                        number_format = (
+                            source_cell.number_format or "General"
+                        )
+                        format_sections = number_format.split(";")
+                        zero_as_empty = (
+                            len(format_sections) >= 3
+                            and '"-"' in format_sections[2]
                         )
 
-                    source_cell = worksheet.cell(
-                        row=row_index + 1,
-                        column=column + 1,
-                    )
-                    number_format = source_cell.number_format or "General"
-                    format_sections = number_format.split(";")
-                    zero_as_dash = (
-                        len(format_sections) >= 3
-                        and '"-"' in format_sections[2]
-                    )
-
-                    if str(source_value).strip() == "-":
-                        normalized_value = "-"
-                    else:
-                        if isinstance(source_value, (int, float)):
-                            numeric_value = float(source_value)
+                        if str(source_value).strip() == "-":
+                            normalized_value = pd.NA
                         else:
-                            converted_value = to_numeric_datax(
-                                pd.Series([source_value]),
-                                ",",
-                            ).iloc[0]
-                            if pd.isna(converted_value):
-                                raise ValueError(
-                                    f"Invalid numeric value for {label}."
-                                )
-                            numeric_value = float(converted_value)
-
-                        if numeric_value == 0 and zero_as_dash:
-                            normalized_value = "-"
-                        else:
-                            positive_format = format_sections[0]
-                            decimal_match = re.search(
-                                r"\.([0#]+)",
-                                positive_format,
-                            )
-                            decimal_places = (
-                                len(decimal_match.group(1))
-                                if decimal_match
-                                else 0
-                            )
-                            quantizer = Decimal("1").scaleb(
-                                -decimal_places
-                            )
-                            rounded_value = Decimal(
-                                str(numeric_value)
-                            ).quantize(
-                                quantizer,
-                                rounding=ROUND_HALF_UP,
-                            )
-                            if decimal_places == 0:
-                                normalized_value = int(rounded_value)
+                            if isinstance(source_value, (int, float)):
+                                numeric_value = float(source_value)
                             else:
-                                normalized_value = float(rounded_value)
+                                converted_value = to_numeric_datax(
+                                    pd.Series([source_value]),
+                                    ",",
+                                ).iloc[0]
+                                if pd.isna(converted_value):
+                                    raise ValueError(
+                                        "Invalid numeric value for "
+                                        f"{label}."
+                                    )
+                                numeric_value = float(converted_value)
+
+                            if numeric_value == 0 and zero_as_empty:
+                                normalized_value = pd.NA
+                            else:
+                                positive_format = format_sections[0]
+                                decimal_match = re.search(
+                                    r"\.([0#]+)",
+                                    positive_format,
+                                )
+                                decimal_places = (
+                                    len(decimal_match.group(1))
+                                    if decimal_match
+                                    else 0
+                                )
+                                quantizer = Decimal("1").scaleb(
+                                    -decimal_places
+                                )
+                                rounded_value = Decimal(
+                                    str(numeric_value)
+                                ).quantize(
+                                    quantizer,
+                                    rounding=ROUND_HALF_UP,
+                                )
+                                if decimal_places == 0:
+                                    normalized_value = int(rounded_value)
+                                else:
+                                    normalized_value = float(rounded_value)
 
                     records.append(
                         {
@@ -316,10 +336,13 @@ class D_BO_000000419_04(Conversion_Base):
             if dataframe.duplicated(subset=key_columns).any():
                 raise ValueError("Duplicate hierarchical records were found.")
 
+            # Filter out empty/null values
+            dataframe = dataframe.dropna(subset=["valor"])
+
             metadata = {
                 "file_name": os.path.basename(file_path),
-                "titles": [section_title],
-                "page_number": int(found_page_number) if found_page_number and int(found_page_number) > 0 else 1,
+                "titles": [document_title],
+                "page_number": int(found_page_number),
             }
             return metadata, dataframe
 
@@ -334,7 +357,9 @@ class D_BO_000000419_04(Conversion_Base):
         decimal_separator,
         TOLERANCE=6.0,
     ):
+        """Validate the normalized BCB balance records."""
         del TOLERANCE
+
         try:
             required_columns = {
                 "nv1",
@@ -349,7 +374,17 @@ class D_BO_000000419_04(Conversion_Base):
                 return True
             if not required_columns.issubset(dataframe.columns):
                 return True
-            if dataframe[list(required_columns)].isna().any().any():
+            hierarchy_columns = [
+                "nv1",
+                "nv2",
+                "nv3",
+                "nv4",
+                "nv5",
+                "fecha",
+            ]
+            if dataframe[hierarchy_columns].isna().any().any():
+                return True
+            if dataframe[hierarchy_columns].eq("-").any().any():
                 return True
 
             key_columns = [
@@ -370,8 +405,13 @@ class D_BO_000000419_04(Conversion_Base):
                 return True
 
             source_values = dataframe["valor"]
-            dash_mask = source_values.astype(str).str.strip().eq("-")
-            values_to_check = source_values.loc[~dash_mask]
+            empty_mask = (
+                source_values.isna()
+                | source_values.astype(str).str.strip().eq("")
+            )
+            values_to_check = source_values.loc[~empty_mask]
+            if values_to_check.empty:
+                return True
             numeric_values = pd.to_numeric(
                 values_to_check,
                 errors="coerce",
@@ -389,5 +429,4 @@ class D_BO_000000419_04(Conversion_Base):
             return True
 
 
-# Compatibility alias
 Robot = D_BO_000000419_04

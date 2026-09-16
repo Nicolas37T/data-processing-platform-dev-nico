@@ -210,7 +210,7 @@ def create_dag(dag, connection_id, id_dag=None):
         db_conn = create_engine(f"postgresql+psycopg2://{_DATA_DB_USER}:{_DATA_DB_PASSWORD}@{_DATA_DB_HOST}:{_DATA_DB_PORT}/DATA_DB_{country_code}_AUX")
 
         with db_conn.connect() as conn:
-            conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {replacement_table[0]}"))
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{replacement_table[0]}"'))
             conn.commit()
         inspector = inspect(db_conn)
         table_exists = inspector.has_table(replacement_table[1], schema=replacement_table[0])

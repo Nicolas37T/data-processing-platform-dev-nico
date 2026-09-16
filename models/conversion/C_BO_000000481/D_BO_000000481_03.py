@@ -98,3 +98,7 @@ class D_BO_000000481_03(Conversion_Base):
             print(f"Validation failed: {e}")
             traceback.print_exc()
             return True
+
+
+Robot = D_BO_000000481_03
+

@@ -47,19 +47,14 @@ class D_BO_000000419_06(Conversion_Base):
                     "The configured keywords do not match the report."
                 )
 
-            report = get_xlsx_report_dataframe(
-                file_path=file_path,
-                key_words="tipos cambio valor ufv",
-                page_number=page_number,
-            )
-            if not report:
-                raise ValueError(
-                    "The exchange rate and UFV table was not found."
-                )
+            excel_file_obj = pd.ExcelFile(file_path)
+            sheet_idx = (page_number - 1) if (0 <= page_number - 1 < len(excel_file_obj.sheet_names)) else 0
+            found_page_number = sheet_idx + 1
+            raw_dataframe = pd.read_excel(file_path, sheet_name=sheet_idx, header=None)
 
-            raw_dataframe, found_page_number = report
             workbook = load_workbook(file_path, data_only=True)
-            worksheet = workbook.worksheets[found_page_number - 1]
+            worksheet = workbook.worksheets[sheet_idx]
+            document_title = "INFORMACIÓN ESTADÍSTICA SEMANAL (p)"
             section_title = "Tipos de cambio y valor de la UFV"
 
             section_row = None
@@ -160,6 +155,31 @@ class D_BO_000000419_06(Conversion_Base):
                 raise ValueError(
                     "Daily columns for the latest week were not found."
                 )
+
+            # Opción A: Si la última semana desglosada tiene menos de 5 días
+            # (ej. inicio de mes o semana incompleta), incluir la columna de la semana anterior
+            if len(date_columns) < 5:
+                first_daily_col = min(date_columns)
+                prev_col = first_daily_col - 1
+                found_prev_col = None
+                found_prev_date = None
+
+                while prev_col >= 0:
+                    for r_check in (date_row, week_row):
+                        val_candidate = raw_dataframe.at[r_check, prev_col]
+                        if not pd.isna(val_candidate):
+                            parsed_prev = pd.to_datetime(val_candidate, errors="coerce")
+                            if not pd.isna(parsed_prev):
+                                found_prev_col = prev_col
+                                found_prev_date = parsed_prev.strftime(format)
+                                break
+                    if found_prev_col is not None:
+                        break
+                    prev_col -= 1
+
+                if found_prev_col is not None and found_prev_col not in date_columns:
+                    date_columns.insert(0, found_prev_col)
+                    date_values[found_prev_col] = found_prev_date
 
             source_rows = []
             previous_row = section_row - 1
@@ -319,7 +339,7 @@ class D_BO_000000419_06(Conversion_Base):
 
             metadata = {
                 "file_name": os.path.basename(file_path),
-                "titles": [section_title],
+                "titles": [document_title],
                 "page_number": int(found_page_number) if found_page_number and int(found_page_number) > 0 else 1,
             }
             return metadata, dataframe

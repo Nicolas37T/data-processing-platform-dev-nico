@@ -8,8 +8,8 @@ from datetime import datetime
 from sqlalchemy import create_engine, inspect, text
 from models.conversion.tools.conversion_tools import insert_metadata, verify_values
 
-REPORT_CODE = 'D_BO_000000418_01'
-FILE_PATH = "models/conversion/C_BO_000000418/20260816publicacion.xlsx"
+REPORT_CODE = 'D_BO_000000270_01'
+FILE_PATH = "models/conversion/C_BO_000000270/2026-07-31_deuda_interna.xlsx"
 
 def get_executor(code):
     db_code = '_'.join(code.split('_')[:-1]).replace('D_', 'C_')
@@ -103,6 +103,8 @@ class TestConversion(unittest.TestCase):
         output_sqlite = f"models/conversion/{db_code}/{REPORT_CODE}.sqlite"
         sqlite_engine = create_engine(f"sqlite:///{output_sqlite}")
         final_df.to_sql(REPORT_CODE, con=sqlite_engine, if_exists="replace", index=False)
+        review_cols = [c for c in ['fecha', 'nv1', 'nv2'] if c in final_df.columns]
+        pd.DataFrame({'column': review_cols}).to_sql('columns_to_review', con=sqlite_engine, if_exists='replace', index=False)
 
         # Validate data results
         has_error = self.robot.validate_data_results(

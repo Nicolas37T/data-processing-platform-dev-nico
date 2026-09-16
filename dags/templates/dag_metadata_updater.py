@@ -113,6 +113,27 @@ def update_dag_tag_and_doc(dag_id: str, process_type: str, new_date: str) -> boo
                 rf"\g<1>{new_date_str}\g<2>",
                 updated_content
             )
+        elif process_type == 'migration':
+            updated_content = re.sub(
+                r"(\|\s*\*\*📅 Última Migración\*\*\s*\|\s*\*\*)[^*]+(\*\*\s*\|)",
+                rf"\g<1>{new_date_str}\g<2>",
+                updated_content
+            )
+            updated_content = re.sub(
+                r'(📅 Última Migración</td>\s*<td[^>]*><b[^>]*>)[^<]+(</b>)',
+                rf'\g<1>{new_date_str}\g<2>',
+                updated_content
+            )
+            updated_content = re.sub(
+                r"(\|\s*\*\*Última Migración \(`migrated_to`\)\*\*\s*\|\s*`)[^`]+(`\s*\|)",
+                rf"\g<1>{new_date_str}\g<2>",
+                updated_content
+            )
+            updated_content = re.sub(
+                r"(\|\s*\*\*migrated_to\*\*\s*\|\s*`)[^`]+(`\s*\|)",
+                rf"\g<1>{new_date_str}\g<2>",
+                updated_content
+            )
 
         if updated_content != content:
             with open(dag_path, 'w', encoding='utf-8') as f:
