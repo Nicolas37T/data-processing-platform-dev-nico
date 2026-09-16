@@ -8,8 +8,10 @@ from datetime import datetime
 from sqlalchemy import create_engine, inspect, text
 from models.conversion.tools.conversion_tools import insert_metadata, verify_values
 
-REPORT_CODE = 'D_BO_000000270_01'
-FILE_PATH = "models/conversion/C_BO_000000270/2026-07-31_deuda_interna.xlsx"
+
+REPORT_CODE = os.environ.get('REPORT_CODE', 'D_BO_000000018_01')
+FILE_PATH = os.environ.get('FILE_PATH', 'models/conversion/C_BO_000000018/2026-07-31_venta cemento.xlsx')
+
 
 def get_executor(code):
     db_code = '_'.join(code.split('_')[:-1]).replace('D_', 'C_')
@@ -91,9 +93,21 @@ class TestConversion(unittest.TestCase):
         except ValueError as e:
             self.fail(f"Date format validation failed: {str(e)}")
 
-        #* comentar para pruebas intermedias                
-        replaces_dict, report_df = self.robot.text_match(df=report_df,db_aux_conn=self.engine,replacement_table_name=self.replacement_table[1],replacement_table_schema=self.replacement_table[0],table_exists=self.table_exists,first_execution=True, dag_run_date= datetime.now())
-        #*        
+        # Ejecutar text_match salvo que se defina SKIP_TEXT_MATCH=1 (para pruebas de extracción pura)
+        skip_text_match = os.environ.get('SKIP_TEXT_MATCH', '0') == '1'
+        if not skip_text_match:
+            replaces_dict, report_df = self.robot.text_match(
+                df=report_df,
+                db_aux_conn=self.engine,
+                replacement_table_name=self.replacement_table[1],
+                replacement_table_schema=self.replacement_table[0],
+                table_exists=self.table_exists,
+                first_execution=True,
+                dag_run_date=datetime.now()
+            )
+        else:
+            print("[INFO] Saltando text_match (modo de extracción pura)...")        
+        
 
         # Metadata insertion
         final_df = insert_metadata(dataframe=report_df, titles=report_dict['titles'], file_name=report_dict['file_name'])

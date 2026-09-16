@@ -7,8 +7,8 @@ from datetime import datetime
 from sqlalchemy import create_engine
 from models.download.tools.download_tools import format_date
 
-CODE_ROBOT = 'D_BO_000000250'
-UPDATED_TO = '2026-06-01'
+CODE_ROBOT = os.environ.get('CODE_ROBOT', 'D_BO_000000541')
+UPDATED_TO = os.environ.get('UPDATED_TO', '2026-08-06')
 
 def get_executor(code):    
     try:

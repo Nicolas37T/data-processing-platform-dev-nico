@@ -1,187 +1,143 @@
-"""Type III download robot for BCB gold price quotations."""
-
-import os
+import traceback
 import re
+import os
 import shutil
-from html import unescape
-from urllib.parse import urljoin
-
+import time
+from playwright.sync_api import sync_playwright
 import pandas as pd
-import requests
-from unidecode import unidecode
-
+from datetime import datetime, timedelta
+from models.download.tools.download_tools import format_date, month_abr_to_number, month_to_number
 from models.download.Download_Base import Download_Base
-from models.download.tools.download_tools import format_date, month_to_number
-
 
 class D_BO_000000485(Download_Base):
-    """Download historical fine gold quotations from the BCB portal."""
 
-    def check_new_data(
-        self,
-        main_url,
-        updated_to,
-        path,
-        key_words=None,
-        format="%Y-%m-%d",
-    ):
-        """Build an Excel file with new gold data from the last seven days.
+    def check_new_data(self, main_url, updated_to,path,key_words, format='%Y-%m-%d'):
+        """
+        Extracts data from the main_url dated after update_to date.
 
-        Args:
-            main_url (str): BCB quotations portal URL.
-            updated_to (str): Last stored date.
-            path (str): Base directory where ``tmp`` will be recreated.
-            key_words (str, optional): Base name for the generated file.
-            format (str, optional): Input and output date format.
+        Parameters:
+            main_url (str): The URL of the main page.
+            updated_to (str): The latest date for which the database contains records.
+            path (str): The directory path to store temporary files.
+            key_words (str): A string used to name the CSV file.
+            format (str): The format of the dates. Default is '%Y-%m-%d'.
 
         Returns:
-            list[dict]: Generated file metadata, or an empty list when no
-            newer records are available or an error occurs.
+            list: A list of dictionaries containing information about the extracted data.
         """
-        tmp_directory = os.path.join(path, "tmp")
 
-        try:
-            if os.path.exists(tmp_directory):
-                shutil.rmtree(tmp_directory)
-            os.makedirs(tmp_directory)
+        with sync_playwright() as pl:
+            # Convert updated_to string to datetime object
+            updated_to = format_date(updated_to)
+            today = datetime.today()
+            init_date = today - timedelta(days=7)
+            
+            # Define XPaths and values to interact with the page
+            search_button_xpath = '//*[@id="subcateg1_data5"]/input[@type="button"]'
+            see_button_xpath = '//form[@name="formone"]//input[@type="submit"]'
+            rows_xpath = '//form[@name="formone"]/following-sibling::table//tr'
+            categ_id = "5"
+            re_date = r'(\d{1,2})\D*((?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic))\D*(\d{4})'
 
-            reference_date = format_date(updated_to, format)
-            if not hasattr(reference_date, "strftime"):
-                raise ValueError("The reference date is invalid.")
+            # Erase the previous tmp path and create the a new one 
+            path = os.path.join(path, 'tmp')
+            if os.path.exists(path):
+                shutil.rmtree(path)
+            os.makedirs(path)
+            
+            try:
+                # Launch browser and navigate to main URL
+                print(f"Launching browser and navigating to {main_url} ...")
+                browser = pl.chromium.launch(headless=True)
+                context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36')
+                context.set_default_timeout(300000)
+                page = context.new_page()
+                page.goto(main_url, wait_until='domcontentloaded')
 
-            end_date = pd.Timestamp.now().normalize()
-            if pd.Timestamp(reference_date) >= end_date:
+                # Select options and initiate search
+                print(f"Selecting category : Metales Preciosos")
+                page.locator("#subcateg1").select_option(categ_id)
+                page.locator("#combos1_5").select_option("2")
+                page.locator(search_button_xpath).click()
+
+                # Wait for iframe to load and interact with it
+                page.frame_locator('//iframe[@name="indiframe"]').locator('#sdd').wait_for()                
+                time.sleep(3)
+
+                frame = page.frame(name="indiframe").frame_element().content_frame()
+                frame.wait_for_selector('//select[@id="moneda"]', state="visible")
+
+                metal_options = [(option.inner_text(),option.get_attribute("value")) for option in frame.query_selector_all('//*[@id="moneda"]/option')]
+
+                print(f"Setting date range from {init_date.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')}")
+                frame.locator("#sdd").select_option(str(init_date.day))
+                frame.locator("#smm").select_option(str(init_date.month))
+                frame.locator("#saa").select_option(str(init_date.year))
+                frame.locator("#edd").select_option(str(today.day))
+                frame.locator("#emm").select_option(str(today.month))
+                frame.locator("#eaa").select_option(str(today.year))
+                
+                dataframes = []
+                for option in metal_options:
+                    print(f"Selecting metal option: {option[0]}")
+                    frame.locator('//select[@id="moneda"]').select_option(option[1])
+                    frame.locator(see_button_xpath).click()
+
+                    time.sleep(5)
+                    frame.wait_for_selector('//form[@name="formone"]/following-sibling::table//tr[1]', state="visible")
+
+                    # Extract the data from the results and format
+                    rows = [[i.inner_text().replace('\n',' ') for i in row.query_selector_all("td")] for row in frame.query_selector_all(rows_xpath)]
+                    df = pd.DataFrame(rows[1:],columns=rows[0])
+
+                    # Convert and format date columns
+                    dates = df["Fecha"].str.extract(re_date,flags=re.IGNORECASE,expand=True)
+                    dates[1] = dates[1].apply(lambda x: month_to_number(x) if month_to_number(x) else month_abr_to_number(x))
+                    df["Fecha"] = dates[[2, 1, 0]].astype(str).agg('-'.join, axis=1)
+
+                    if not df.empty:
+                        dataframes.append(df)
+
+                # Check if there is new data available
+                date = dataframes[0]["Fecha"].iloc[-1]
+                date = format_date(date)
+                
+                if date <= updated_to:
+                    print(f"There is no data after the date: {updated_to.strftime(format=format)}")
+                    return []
+                
+                # Save data to Excel file
+                file_path = os.path.join(path,f"{key_words}.xlsx")
+                with pd.ExcelWriter(file_path) as writer:
+                   dataframes[0].to_excel(writer, sheet_name='Oro', index=False)
+                   dataframes[1].to_excel(writer, sheet_name='Plata', index=False)
+                        
+                return [{
+                    "tmp_path":file_path,
+                    "updated_to":date.strftime(format=format),
+                    "download_url":'-',
+                }]
+
+            except Exception as e:
+                print(f"An error ocurred: {e}")
+                traceback.print_exc()
                 return []
-            start_date = end_date - pd.Timedelta(days=6)
-
-            historical_url = urljoin(
-                main_url,
-                "/librerias/indicadores/metales/anteriores.php",
-            )
-            parameters = {
-                "sdd": start_date.day,
-                "smm": start_date.month,
-                "saa": start_date.year,
-                "edd": end_date.day,
-                "emm": end_date.month,
-                "eaa": end_date.year,
-                "moneda": 92,
-                "qlist": 1,
-                "mk": 2,
-                "range": "METAL",
-            }
-            response = requests.get(
-                historical_url,
-                params=parameters,
-                headers={
-                    "User-Agent": (
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/120.0.0.0 Safari/537.36"
-                    )
-                },
-                timeout=60,
-            )
-            response.raise_for_status()
-            response.encoding = "iso-8859-1"
-
-            records = []
-            html_rows = re.findall(
-                r'<tr\s+class="listas-fila[12]"[^>]*>(.*?)</tr>',
-                response.text,
-                re.IGNORECASE | re.DOTALL,
-            )
-
-            for html_row in html_rows:
-                html_cells = re.findall(
-                    r"<td[^>]*>(.*?)</td>",
-                    html_row,
-                    re.IGNORECASE | re.DOTALL,
-                )
-                cells = [
-                    re.sub(
-                        r"\s+",
-                        " ",
-                        unescape(re.sub(r"<[^>]+>", " ", cell)),
-                    ).strip()
-                    for cell in html_cells
-                ]
-                if len(cells) < 4:
-                    continue
-
-                date_match = re.search(
-                    r"(\d{1,2})\s+de\s+([A-Za-zÁÉÍÓÚÑáéíóúñ]+)"
-                    r"(?:\s+de)?\s+(\d{4})",
-                    cells[1],
-                    re.IGNORECASE,
-                )
-                if not date_match:
-                    continue
-
-                day, month_name, year = date_match.groups()
-                month = month_to_number(unidecode(month_name))
-                if not month:
-                    continue
-
-                record_date = pd.Timestamp(
-                    year=int(year),
-                    month=int(month),
-                    day=int(day),
-                )
-                records.append(
-                    {
-                        "Nro": len(records) + 1,
-                        "Fecha": record_date.strftime(format),
-                        (
-                            "TIPO DE CAMBIO EN ONZA TROY FINA ORO(S) "
-                            "POR UNIDAD DE DOLAR (USD)"
-                        ): cells[2],
-                        (
-                            "TIPO DE CAMBIO EN Bs POR UNIDAD DE "
-                            "ONZA TROY FINA ORO"
-                        ): cells[3],
-                    }
-                )
-
-            if not records:
-                return []
-
-            dataframe = pd.DataFrame(records)
-            dataframe = dataframe.drop_duplicates(
-                subset=["Fecha"],
-                keep="last",
-            ).sort_values("Fecha")
-            dataframe["Nro"] = range(1, len(dataframe) + 1)
-
-            latest_date = pd.Timestamp(dataframe["Fecha"].max())
-            base_name = unidecode(
-                str(key_words or "Metales Preciosos Oro")
-            )
-            base_name = re.sub(r"[^A-Za-z0-9_-]+", "_", base_name)
-            base_name = base_name.strip("_") or "metales_preciosos_oro"
-            file_path = os.path.join(
-                tmp_directory,
-                f"{base_name}_{latest_date.strftime('%Y_%m_%d')}.xlsx",
-            )
-            dataframe.to_excel(file_path, index=False)
-
-            if (
-                not os.path.isfile(file_path)
-                or os.path.getsize(file_path) == 0
-            ):
-                raise ValueError("The generated Excel file is not readable.")
-
-            return [
-                {
-                    "tmp_path": file_path,
-                    "updated_to": latest_date.strftime(format),
-                    "download_url": response.url,
-                }
-            ]
-
-        except Exception as error:
-            print(f"Could not download BCB gold quotations: {error}")
-            return []
+            finally:
+                # Close page and browser
+                if 'page' in locals():
+                    page.close()
+                if 'browser' in locals():
+                    browser.close()
+        
+# if __name__ == "__main__":
+#     robot = Executor_D_BO_000000485()
+#     x =robot.check_new_data(main_url="https://www.bcb.gob.bo/?q=cotizaciones_tc",updated_to='2024-08-01', path="./download/D_BO_000000485", key_words=" oro plata")
+#     print(len(x))
+#     print(x)
+    # files = [{'download_url': 'https://www.bcb.gob.bo/webdocs/publicacionesbcb/2024/04/10/01.01P.xlsx', 'tmp_path': r"/opt/airflow/models/download/D_BO_000000484/TD_08_08_2024.pdf"}, {'download_url': 'https://www.bcb.gob.bo/webdocs/publicacionesbcb/2024/04/10/01.01P.xlsx', 'tmp_path': r"/opt/airflow/models/download/D_BO_000000484/TD_08_08_2024.xlsx"}]
+    # y = robot.compare_files(files_paths=files,updated_to="2024-08-05")
+    # print(y)
 
 
+Executor_D_BO_000000485 = D_BO_000000485
 Robot = D_BO_000000485
