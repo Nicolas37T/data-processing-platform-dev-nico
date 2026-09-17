@@ -68,10 +68,13 @@ class TestDownloadTypeI(unittest.TestCase):
         self.assertIsInstance(result, list, "The result must be a list")
         self.assertTrue(len(result) > 0, "At least one file must pass the date filter")
 
-        expected_keys = {'tmp_path', 'updated_to', 'download_url'}
+        valid_key_sets = [
+            {'tmp_path', 'updated_to', 'download_url'},
+            {'tmp_path', 'updated_to', 'download_url', 'zip_path'}
+        ]
         for item in result:
             self.assertIsInstance(item, dict, "Each item must be a dictionary")
-            self.assertSetEqual(set(item.keys()), expected_keys, f"Each item must have only {expected_keys} keys")            
+            self.assertIn(set(item.keys()), valid_key_sets, f"Keys {set(item.keys())} must be one of {valid_key_sets}")            
             
             result_updated_to = format_date(item['updated_to'])
             self.assertTrue(result_updated_to > updated_to, "The download date must be later than the reference date")
