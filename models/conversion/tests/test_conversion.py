@@ -117,7 +117,7 @@ class TestConversion(unittest.TestCase):
         output_sqlite = f"models/conversion/{db_code}/{REPORT_CODE}.sqlite"
         sqlite_engine = create_engine(f"sqlite:///{output_sqlite}")
         final_df.to_sql(REPORT_CODE, con=sqlite_engine, if_exists="replace", index=False)
-        review_cols = [c for c in ['fecha', 'nv1', 'nv2'] if c in final_df.columns]
+        review_cols = [c for c in final_df.columns if c.startswith('nv')]
         pd.DataFrame({'column': review_cols}).to_sql('columns_to_review', con=sqlite_engine, if_exists='replace', index=False)
 
         # Validate data results

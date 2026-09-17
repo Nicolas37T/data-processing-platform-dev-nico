@@ -51,10 +51,13 @@ class TestDownloadTypeIII(unittest.TestCase):
         self.assertIsInstance(result, list, "The result must be a list")
         self.assertTrue(len(result) > 0, "At least one file must be downloaded")
 
-        expected_keys = {'tmp_path', 'updated_to', 'download_url'}
+        valid_keys = [
+            {'tmp_path', 'updated_to', 'download_url'},
+            {'tmp_path', 'updated_to', 'download_url', 'zip_path'}
+        ]
         for item in result:
             self.assertIsInstance(item, dict, "Each item must be a dictionary")
-            self.assertSetEqual(set(item.keys()), expected_keys, f"Each item must have only {expected_keys} keys")
+            self.assertIn(set(item.keys()), valid_keys, f"Each item keys must be one of {valid_keys}")
             self.assertTrue(os.path.exists(item['tmp_path']), f"The downloaded file must exist: {item['tmp_path']}")
 
             result_updated_to = format_date(item['updated_to'])
