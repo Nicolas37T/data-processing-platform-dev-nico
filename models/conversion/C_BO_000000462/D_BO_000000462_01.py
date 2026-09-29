@@ -74,8 +74,6 @@ class D_BO_000000462_01(Conversion_Base):
                         else date_value - timedelta(days=1)
                     )
                     expected_markets = ["MUTUALISTA", "LOS POZOS", "ABASTO", "RAMADA"]
-                    if heading == "CONSUMIDOR: P/ A MANO C/MENUDO (Bs./Kg.)":
-                        expected_markets.append("PROMEDIO")
 
                     for row_index, source_row in enumerate(source_table[header_index + 1:]):
                         raw_market_str = str(source_row[0] or "").strip()
