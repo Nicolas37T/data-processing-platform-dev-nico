@@ -62,18 +62,19 @@ Retorna una tupla `(metadata_dict, df_melted)`:
 
 ## 2. 📥 Robots de Descarga (`D_...`)
 
-### 2.1. Métodos Obligatorios
-```python
-class Robot:
-    def get_file_url(self, specific_url, navigation_path, download_path, user_key=None) -> list:
-        pass
+### 2.1. Arquitectura de los 4 Tipos de Descarga y Plantillas de DAG
 
-    def compare_files(self, file_path_1, file_path_2) -> bool:
-        pass
+| Tipo | Métodos en el Robot | Plantilla DAG (`dags/templates/`) | Test Unitario | Entregable del Robot |
+| :--- | :--- | :--- | :--- | :--- |
+| **Tipo I** (`file_download_type_i`) | `get_file_url()`, `compare_files()` | `file_download_template.py` | `test_download_type_i.py` | Lista de URLs directas posteriores a `updated_to`. |
+| **Tipo II** (`file_download_type_ii`) | `verify_download()`, `compare_files()` | `direct_download_template.py` | `test_download_type_ii.py` | Clics/filtros con Playwright. Deposita en `<path>/tmp` y `compare_files()` filtra por fecha interna. |
+| **Tipo III** (`file_download_type_iii`) | `check_new_data()` *(🚫 sin `compare_files`)* | `data_download_template.py` | `test_download_type_iii.py` | APIs REST o spiders. Construye archivos directamente en `<path>/tmp` y calcula `updated_to`. |
+| **Tipo IV** (`file_download_type_iv`) | `get_data()` *(🚫 sin `compare_files`)* | `multi_file_download_template.py` | `test_download_type_iv.py` | Descargas masivas a `<path>/tmp` con prefijo `YYYY-MM-DD_...`. Retorna `str` de la ruta `tmp`. |
 
-    def verify_url(self, url) -> bool:
-        pass
-```
+### 2.2. Reglas Críticas de Descarga
+- **Herencia e Importación:** Heredar de `from models.download.Download_Base import Download_Base`.
+- **Limpieza de Directorio Temporal:** En Tipos II, III y IV, la función principal DEBE recrear limpiamente `<path>/tmp` (`shutil.rmtree` y `os.makedirs`).
+- **Descarga Histórica Completa:** Prohibido usar `max()` para descargar solo el último mes; se deben descargar todos los registros nuevos posteriores a `updated_to`.
 
 ---
 

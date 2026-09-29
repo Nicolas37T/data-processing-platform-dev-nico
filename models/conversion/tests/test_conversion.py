@@ -43,7 +43,7 @@ class TestConversion(unittest.TestCase):
         engine = create_engine(f"postgresql+psycopg2://{_data_user}:{_data_password}@{_data_host}:{_data_port}/DATA_DB_{country_code}_AUX")
         with engine.connect() as conn:
             with conn.begin():
-                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.replacement_table[0]}"))
+                conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{self.replacement_table[0]}"'))
         inspector = inspect(engine)
         self.table_exists = inspector.has_table(self.replacement_table[1], schema=self.replacement_table[0])
 

@@ -19,7 +19,7 @@ process_dict = {
         'prefix': 'D',
         'sql_query': (
             'SELECT f.code, f.name AS file_name, f.download_type, f.schedule_interval, '
-            'f.updated_to, f.main_url, f.navigation_path, '
+            'f.updated_to, f.main_url, f.navigation_path, f.publication_frequency, '
             's.short_name, s.name AS source_name, '
             'COALESCE(STRING_AGG(DISTINCT db.db_code, \', \'), \'\') AS dataset, '
             'COALESCE(STRING_AGG(DISTINCT db.name, \' / \'), \'\') AS dataset_name '
@@ -30,7 +30,7 @@ process_dict = {
             'LEFT JOIN data_base db ON db.db_code = dbr.db_code '
             'WHERE 1=1 '
             'GROUP BY f.code, f.name, f.download_type, f.schedule_interval, f.updated_to, '
-            'f.main_url, f.navigation_path, s.short_name, s.name'
+            'f.main_url, f.navigation_path, f.publication_frequency, s.short_name, s.name'
         ),
     },
     'conversion': {
@@ -39,6 +39,7 @@ process_dict = {
         'sql_query': (
             'SELECT r.code, r.name AS report_name, r.converted_to, r.key_words, '
             'r.path AS path_file, r.page_number AS location, '
+            'COALESCE(r.publication_frequency, f.publication_frequency) AS publication_frequency, '
             's.short_name, s.name AS source_name, '
             'COALESCE(STRING_AGG(DISTINCT db.db_code, \', \'), \'\') AS dataset, '
             'COALESCE(STRING_AGG(DISTINCT db.name, \' / \'), \'\') AS dataset_name '
@@ -48,7 +49,8 @@ process_dict = {
             'LEFT JOIN data_base_report dbr ON dbr.report_code = r.code '
             'LEFT JOIN data_base db ON db.db_code = dbr.db_code '
             'WHERE 1=1 '
-            'GROUP BY r.code, r.name, r.converted_to, r.key_words, r.path, r.page_number, s.short_name, s.name'
+            'GROUP BY r.code, r.name, r.converted_to, r.key_words, r.path, r.page_number, '
+            'r.publication_frequency, f.publication_frequency, s.short_name, s.name'
         ),
     },
     'migration': {
@@ -56,6 +58,7 @@ process_dict = {
         'prefix': 'M',
         'sql_query': (
             'SELECT r.code, r.name AS report_name, r.migrated_to, r.storage_table, '
+            'COALESCE(r.publication_frequency, f.publication_frequency) AS publication_frequency, '
             's.short_name, s.name AS source_name, '
             'COALESCE(STRING_AGG(DISTINCT db.db_code, \', \'), \'\') AS dataset, '
             'COALESCE(STRING_AGG(DISTINCT db.name, \' / \'), \'\') AS dataset_name '
@@ -65,7 +68,8 @@ process_dict = {
             'LEFT JOIN data_base_report dbr ON dbr.report_code = r.code '
             'LEFT JOIN data_base db ON db.db_code = dbr.db_code '
             'WHERE 1=1 '
-            'GROUP BY r.code, r.name, r.migrated_to, r.storage_table, s.short_name, s.name'
+            'GROUP BY r.code, r.name, r.migrated_to, r.storage_table, '
+            'r.publication_frequency, f.publication_frequency, s.short_name, s.name'
         ),
     },
     'product': {
@@ -229,6 +233,7 @@ class RobotCodeHandler:
                 'key_words': lambda x: ', '.join(sorted(set(filter(None, x.dropna().astype(str))))),
                 'path_file': 'first',
                 'location': 'first',
+                'publication_frequency': 'first',
             }
             df = df.groupby('code', as_index=False).agg(agg_dict)
         elif self.process == 'migration':
@@ -240,6 +245,7 @@ class RobotCodeHandler:
                 'report_name': lambda x: ' / '.join(sorted(set(filter(None, x.dropna().astype(str))))),
                 'storage_table': lambda x: ' / '.join(sorted(set(filter(None, x.dropna().astype(str))))),
                 'migrated_to': lambda x: max([d for d in x if pd.notna(d)], default=None),
+                'publication_frequency': 'first',
             }
             df = df.groupby('code', as_index=False).agg(agg_dict)
         else:
@@ -298,6 +304,29 @@ class RobotCodeHandler:
                         tags.append(ds_clean)
 
             tags.append(self.process.capitalize())
+
+            # Frequency Tag (Standardized: Diario, Mensual, Semanal, Trimestral, Semestral, Anual)
+            raw_freq = str(robot.get('publication_frequency') or '').strip().lower()
+            if raw_freq and raw_freq not in ('none', 'nan', '', '-'):
+                if 'diari' in raw_freq:
+                    freq_tag = 'Diario'
+                elif 'mensua' in raw_freq:
+                    freq_tag = 'Mensual'
+                elif 'semana' in raw_freq:
+                    freq_tag = 'Semanal'
+                elif 'quincena' in raw_freq:
+                    freq_tag = 'Quincenal'
+                elif 'trimest' in raw_freq:
+                    freq_tag = 'Trimestral'
+                elif 'semest' in raw_freq:
+                    freq_tag = 'Semestral'
+                elif 'anua' in raw_freq:
+                    freq_tag = 'Anual'
+                else:
+                    freq_tag = raw_freq.capitalize()
+
+                if freq_tag not in tags:
+                    tags.append(freq_tag)
 
             if self.process == 'download':
                 updated_to = str(robot.get('updated_to') or '').strip()
@@ -358,6 +387,7 @@ class RobotCodeHandler:
                     f"| **📊 Dataset(s)** | `{datasets_str}` |\n"
                     f"| **📝 Nombre Dataset** | {dataset_name} |\n"
                     f"| **📄 Reporte(s)** | {clean_val(robot.get('report_name'))} |\n"
+                    f"| **⏱️ Frecuencia** | `{clean_val(robot.get('publication_frequency'))}` |\n"
                     f"| **📅 Última Conversión** | **{clean_val(robot.get('converted_to'))}** |\n"
                     f"| **🔑 Palabras Clave** | {clean_val(robot.get('key_words'))} |\n"
                     f"| **📍 Ubicación** | {clean_val(robot.get('location'))} |\n"
@@ -373,6 +403,7 @@ class RobotCodeHandler:
                     f"| **📝 Nombre Dataset** | {dataset_name} |\n"
                     f"| **📄 Sub-reporte(s)** | {clean_val(robot.get('report_name'))} |\n"
                     f"| **🗄️ Tabla(s) Almacén** | `{clean_val(robot.get('storage_table'))}` |\n"
+                    f"| **⏱️ Frecuencia** | `{clean_val(robot.get('publication_frequency'))}` |\n"
                     f"| **📅 Última Migración** | **{clean_val(robot.get('migrated_to'))}** |\n"
                 )
             else:

@@ -82,6 +82,20 @@ def create_dag(dag, connection_id, id_dag=None):
         """
         pg_hook.run(insert_sql, parameters=(id_report, execution_date, report_name, file_code, task, str(exception)))
 
+        try:
+            from templates.taiga_notifier import send_taiga_incident
+            dag_code = id_dag or dag.dag_id
+            send_taiga_incident(
+                dag_code=dag_code,
+                error_type="conversion_exception",
+                failed_task=task,
+                exception_msg=str(exception),
+                file_code=file_code,
+                subreport_name=report_name
+            )
+        except Exception as _e_taiga:
+            print(f"[TAIGA_CALLBACK] Warning: { _e_taiga}")
+
         delete_tmp_dirs(context)
 
 
@@ -91,15 +105,26 @@ def create_dag(dag, connection_id, id_dag=None):
         id_download = context['dag_run'].conf.get('id_download')
         compare_dates = context['dag_run'].conf.get('compare_dates')
         pg_hook = PostgresHook(postgres_conn_id=connection_id)
-        sql = "SELECT r.path, r.id_report, r.key_words, r.converted_report_path, r.code, r.converted_to, r.name, r.publication_frequency, r.file_extension, r.replacement_table, r.compare_dates, r.page_number, r.decimal_separator, f.code as file_code FROM report AS r INNER JOIN file as f ON r.id_file = f.id_file WHERE r.code = %s"
         connection = pg_hook.get_conn()
         cursor = connection.cursor()
+
+        if not report_code:
+            dag_code = id_dag or dag.dag_id
+            f_code = dag_code.replace('C_', 'D_')
+            cursor.execute("SELECT r.code FROM report r INNER JOIN file f ON r.id_file = f.id_file WHERE f.code = %s ORDER BY r.id_report ASC LIMIT 1", (f_code,))
+            row_rep = cursor.fetchone()
+            if row_rep:
+                report_code = row_rep[0]
+
+        sql = "SELECT r.path, r.id_report, r.key_words, r.converted_report_path, r.code, r.converted_to, r.name, r.publication_frequency, r.file_extension, r.replacement_table, r.compare_dates, r.page_number, r.decimal_separator, f.code as file_code FROM report AS r INNER JOIN file as f ON r.id_file = f.id_file WHERE r.code = %s"
         cursor.execute(sql, (report_code,))
         columns = [col[0] for col in cursor.description]
 
         results = []
         for row in cursor.fetchall():
             results.append(dict(zip(columns, row)))
+        if not results:
+            raise ValueError(f"No se encontró reporte en BD para report_code='{report_code}' (DAG: {dag.dag_id})")
         report = results[0]
         path = convert_win_path(report["path"])
         last_conversion_path = convert_win_path(report["converted_report_path"])
@@ -149,7 +174,7 @@ def create_dag(dag, connection_id, id_dag=None):
         elif zips:
             dir_path = zips[0]
             ti.xcom_push(key='type', value='Multiple')
-            with zipfile.ZipFile(dir_path[0], 'r') as zip_ref:
+            with zipfile.ZipFile(dir_path, 'r') as zip_ref:
                 for f in zip_ref.infolist():
                     if not f.is_dir():
                         downloaded_files.append(zip_ref.extract(f, tmp_path))
@@ -357,13 +382,82 @@ def create_dag(dag, connection_id, id_dag=None):
             on_failure_callback=dag_failure_callback
         )
 
+        def _on_corrupt_file_success(context):
+            try:
+                ti = context['ti']
+                corrupted_files_path = ti.xcom_pull(key='corrupted_files_path', task_ids='read_file')
+                file_code = ti.xcom_pull(key='file_code', task_ids='get_conversion_data')
+                report_name = ti.xcom_pull(key='name', task_ids='get_conversion_data')
+                code = ti.xcom_pull(key='code', task_ids='get_conversion_data')
+                from templates.taiga_notifier import send_taiga_incident
+                dag_code = id_dag or dag.dag_id
+                send_taiga_incident(
+                    dag_code=dag_code,
+                    error_type="corrupted_file",
+                    failed_task="read_file",
+                    anomaly_path=corrupted_files_path,
+                    file_code=file_code,
+                    subreport_code=code,
+                    subreport_name=report_name
+                )
+            except Exception as _e_taiga:
+                print(f"[TAIGA_CALLBACK] Warning corrupt_file: {_e_taiga}")
+            finally:
+                delete_tmp_dirs(context)
+
+        def _on_extraction_error_success(context):
+            try:
+                ti = context['ti']
+                corrupted_files_path = ti.xcom_pull(key='corrupted_files_path', task_ids='extraction')
+                file_code = ti.xcom_pull(key='file_code', task_ids='get_conversion_data')
+                report_name = ti.xcom_pull(key='name', task_ids='get_conversion_data')
+                code = ti.xcom_pull(key='code', task_ids='get_conversion_data')
+                from templates.taiga_notifier import send_taiga_incident
+                dag_code = id_dag or dag.dag_id
+                send_taiga_incident(
+                    dag_code=dag_code,
+                    error_type="extraction_error",
+                    failed_task="extraction",
+                    anomaly_path=corrupted_files_path,
+                    file_code=file_code,
+                    subreport_code=code,
+                    subreport_name=report_name
+                )
+            except Exception as _e_taiga:
+                print(f"[TAIGA_CALLBACK] Warning extraction_error: {_e_taiga}")
+            finally:
+                delete_tmp_dirs(context)
+
+        def _on_structure_change_success(context):
+            try:
+                ti = context['ti']
+                corrupted_files_path = ti.xcom_pull(key='corrupted_files_path', task_ids='structure_review')
+                file_code = ti.xcom_pull(key='file_code', task_ids='get_conversion_data')
+                report_name = ti.xcom_pull(key='name', task_ids='get_conversion_data')
+                code = ti.xcom_pull(key='code', task_ids='get_conversion_data')
+                from templates.taiga_notifier import send_taiga_incident
+                dag_code = id_dag or dag.dag_id
+                send_taiga_incident(
+                    dag_code=dag_code,
+                    error_type="structure_change",
+                    failed_task="structure_review",
+                    anomaly_path=corrupted_files_path,
+                    file_code=file_code,
+                    subreport_code=code,
+                    subreport_name=report_name
+                )
+            except Exception as _e_taiga:
+                print(f"[TAIGA_CALLBACK] Warning structure_change: {_e_taiga}")
+            finally:
+                delete_tmp_dirs(context)
+
         notify_corrupt_file = PostgresOperator(
             task_id="notify_corrupt_file",
             conn_id=connection_id,
             sql="sql/insert_conversion_status.sql",
             params={'task': "read_file", 'key': "corrupted_files_path"},
             on_failure_callback=dag_failure_callback,
-            on_success_callback=delete_tmp_dirs
+            on_success_callback=_on_corrupt_file_success
         )
 
         notify_extraction_error = PostgresOperator(
@@ -372,7 +466,7 @@ def create_dag(dag, connection_id, id_dag=None):
             sql="sql/insert_conversion_status.sql",
             params={'task': "extraction", 'key': "corrupted_files_path"},
             on_failure_callback=dag_failure_callback,
-            on_success_callback=delete_tmp_dirs
+            on_success_callback=_on_extraction_error_success
         )
 
         notify_structure_change = PostgresOperator(
@@ -381,7 +475,7 @@ def create_dag(dag, connection_id, id_dag=None):
             sql="sql/insert_conversion_status.sql",
             params={'task': "structure_review", 'key': "corrupted_files_path"},
             on_failure_callback=dag_failure_callback,
-            on_success_callback=delete_tmp_dirs
+            on_success_callback=_on_structure_change_success
         )
 
         record_conversion = PostgresOperator(

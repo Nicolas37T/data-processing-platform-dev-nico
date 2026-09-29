@@ -29,6 +29,11 @@ Esta skill guía el desarrollo de un robot de conversión (`robot.py`) que trans
 > [!IMPORTANT]
 > **REGLA ESTRICTA DE 2 MÉTODOS**: La clase solo debe tener `extraction()` y `validate_data_results()`.
 > No usar `__init__`. Anidar funciones auxiliares dentro de `extraction()`.
+> 
+> ⚠️ **Importación correcta de `Conversion_Base`**:
+> - En `data-processing-platform-dev`: `from models.conversion.Conversion_Base import Conversion_Base`
+> - En `data-processing-modules`: `from conversion_tools import to_numeric_datax` y clase base `object` o import directo.
+> - **NUNCA** hacer `from models.conversion import Conversion_Base` porque importa el archivo/módulo en vez de la clase, causando `TypeError: module() takes at most 2 arguments`.
 
 ```python
 import os
@@ -38,12 +43,8 @@ import openpyxl
 import pandas as pd
 from typing import Tuple
 
-from conversion_tools import to_numeric_datax
-
-try:
-    from models.conversion import Conversion_Base
-except ImportError:
-    Conversion_Base = object
+from models.conversion.tools.conversion_tools import to_numeric_datax
+from models.conversion.Conversion_Base import Conversion_Base
 
 
 class Robot(Conversion_Base):

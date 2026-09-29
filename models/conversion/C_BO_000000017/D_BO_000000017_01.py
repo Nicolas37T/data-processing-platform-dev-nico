@@ -1,3 +1,4 @@
+from models.conversion.Conversion_Base import Conversion_Base
 """Robot for D_BO_000000017_01: Bolivia - Producción de Cemento por Departamento según Año y Mes.
 
 Fuente: INE (Instituto Nacional de Estadística)
@@ -10,7 +11,6 @@ from typing import Tuple, Union
 
 import pandas as pd
 
-from models.conversion.Conversion_Base import Conversion_Base
 from models.conversion.tools.conversion_tools import (
     extract_report_df,
     get_xlsx_report_dataframe,
@@ -182,3 +182,6 @@ class D_BO_000000017_01(Conversion_Base):
             print(f"Validation failed for dates:\n{failed}")
 
         return bool(has_error)
+
+Executor_D_BO_000000017_01 = D_BO_000000017_01
+Robot = D_BO_000000017_01

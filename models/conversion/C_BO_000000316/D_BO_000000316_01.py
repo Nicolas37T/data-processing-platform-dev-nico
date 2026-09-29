@@ -79,7 +79,7 @@ class D_BO_000000316_01(Conversion_Base):
             end_idx = start_idx
             for i in range(start_idx, len(df_raw)):
                 val = str(df_raw.iloc[i, 0]).strip().upper()
-                if "TOTAL" in val or "PARTICIPACIÓN" in val or val == "NAN" or val == "":
+                if val.startswith("(") or val == "NAN" or val == "":
                     end_idx = i
                     break
                     

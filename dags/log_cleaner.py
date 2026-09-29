@@ -1,6 +1,9 @@
 from airflow import DAG
 from airflow.models import XCom
-from airflow.operators.python import PythonOperator
+try:
+    from airflow.providers.standard.operators.python import PythonOperator
+except ImportError:
+    from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta, timezone
 
 def days_ago(n):
@@ -24,12 +27,16 @@ def cleanup_logs():
                 os.rmdir(dir_path)
 @provide_session
 def delete_old_xcoms(session=None):
-    target_date = datetime.now() - timedelta(days=7)
-    deleted = session.query(XCom).filter(
-        XCom.execution_date <= target_date
-    ).delete(synchronize_session=False)
-    session.commit()
-    print(f"{deleted} XComs deleted.")
+    target_date = datetime.now(tz=timezone.utc) - timedelta(days=7)
+    date_col = getattr(XCom, 'timestamp', getattr(XCom, 'execution_date', None))
+    if date_col is not None:
+        deleted = session.query(XCom).filter(
+            date_col <= target_date
+        ).delete(synchronize_session=False)
+        session.commit()
+        print(f"{deleted} XComs deleted.")
+    else:
+        print("No date column found on XCom model.")
 
 default_args = {
     'owner': 'airflow',
@@ -40,7 +47,7 @@ default_args = {
 with DAG(
     'cleanup_logs',
     default_args=default_args,
-    schedule_interval='0 22 * * 0',
+    schedule='0 22 * * 0',
     catchup=False,
     tags=["maintenance"],
 ) as dag:

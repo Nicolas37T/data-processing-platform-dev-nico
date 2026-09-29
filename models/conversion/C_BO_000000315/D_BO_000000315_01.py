@@ -85,7 +85,7 @@ class D_BO_000000315_01(Conversion_Base):
             for i in range(start_idx, len(df_raw)):
                 val = str(df_raw.iloc[i, 0]).strip().upper()
                 # Stop when hitting totals, participation, empty rows, or NaN
-                if "TOTAL" in val or "PARTICIPACIÓN" in val or val == "NAN" or val == "":
+                if val.startswith("(") or val == "NAN" or val == "":
                     end_idx = i
                     break
                     

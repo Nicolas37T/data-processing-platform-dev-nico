@@ -69,6 +69,19 @@ def create_dag(dag, connection_id, id_dag=None):
         """
         pg_hook.run(insert_sql, parameters=(id_report, execution_date, code, task, str(exception)))
 
+        try:
+            from templates.taiga_notifier import send_taiga_incident
+            dag_code = id_dag or dag.dag_id
+            send_taiga_incident(
+                dag_code=dag_code,
+                error_type="migration_exception",
+                failed_task=task,
+                exception_msg=str(exception),
+                subreport_code=code
+            )
+        except Exception as _e_taiga:
+            print(f"[TAIGA_CALLBACK] Warning migration failure: {_e_taiga}")
+
     def _get_migration_data(**context):
         ti = context["ti"]
         report_code = context['dag_run'].conf.get('code')
@@ -251,12 +264,45 @@ def create_dag(dag, connection_id, id_dag=None):
             on_failure_callback=dag_failure_callback
         )
 
+        def _on_load_error_success(context):
+            try:
+                ti = context['ti']
+                code = ti.xcom_pull(key='code', task_ids='get_migration_data')
+                from templates.taiga_notifier import send_taiga_incident
+                dag_code = id_dag or dag.dag_id
+                send_taiga_incident(
+                    dag_code=dag_code,
+                    error_type="migration_exception",
+                    failed_task="load",
+                    subreport_code=code,
+                    exception_msg="Error en tarea load de migración"
+                )
+            except Exception as _e_taiga:
+                print(f"[TAIGA_CALLBACK] Warning load_error: {_e_taiga}")
+
+        def _on_post_load_error_success(context):
+            try:
+                ti = context['ti']
+                code = ti.xcom_pull(key='code', task_ids='get_migration_data')
+                from templates.taiga_notifier import send_taiga_incident
+                dag_code = id_dag or dag.dag_id
+                send_taiga_incident(
+                    dag_code=dag_code,
+                    error_type="migration_exception",
+                    failed_task="post_load",
+                    subreport_code=code,
+                    exception_msg="Error en tarea post_load de migración"
+                )
+            except Exception as _e_taiga:
+                print(f"[TAIGA_CALLBACK] Warning post_load_error: {_e_taiga}")
+
         notify_load_error = PostgresOperator(
             task_id="notify_load_error",
             conn_id=connection_id,
             sql="sql/insert_migration_status.sql",
             params={'status': "load_error"},
-            on_failure_callback=dag_failure_callback
+            on_failure_callback=dag_failure_callback,
+            on_success_callback=_on_load_error_success
         )
 
         notify_post_load_error = PostgresOperator(
@@ -264,7 +310,8 @@ def create_dag(dag, connection_id, id_dag=None):
             conn_id=connection_id,
             sql="sql/insert_migration_status.sql",
             params={'status': "post_load_error"},
-            on_failure_callback=dag_failure_callback
+            on_failure_callback=dag_failure_callback,
+            on_success_callback=_on_post_load_error_success
         )
 
         record_migration = PostgresOperator(

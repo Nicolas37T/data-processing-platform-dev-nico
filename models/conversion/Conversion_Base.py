@@ -280,8 +280,12 @@ class Conversion_Base():
             verify_values(data_df=data_df)
 
             # Verify the columns that need to be reviewed
-            columns_to_review_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path, table_name='columns_to_review')
-            columns_to_review = columns_to_review_df['column'].unique().tolist()
+            try:
+                columns_to_review_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path, table_name='columns_to_review')
+                columns_to_review = columns_to_review_df['column'].unique().tolist()
+            except Exception as e:
+                print(f"Notice: 'columns_to_review' table not found in {last_conversion_path} ({e}). Defaulting to hierarchy columns.")
+                columns_to_review = [col for col in last_conversion_cols if str(col).startswith('nv')]
             
             if not columns_to_review:
                 return data_file # Return the data file path if no columns need review

@@ -26,6 +26,7 @@ Cuando el desarrollador diga **"hola quiero crear la conversión para [CÓDIGO]"
   1. `extraction()`
   2. `validate_data_results()` (retorna `False` si cuadra, `True` si hay error).
 - ❌ **PROHIBIDO `__init__`** o métodos con `self._...`.
+- ⚠️ **Importación Limpia**: Usar `from models.conversion.Conversion_Base import Conversion_Base` (evitar `from models.conversion import Conversion_Base` que causa `TypeError: module() takes at most 2 arguments`).
 - Normalización numérica con `to_numeric_datax`.
 - Entregar en una sola respuesta:
   1. Código completo de `robot.py`.
@@ -37,14 +38,14 @@ Cuando el desarrollador diga **"hola quiero crear la conversión para [CÓDIGO]"
 ## 📥 Flujo Ágil para Robots de Descarga
 
 Cuando el desarrollador diga **"hola quiero crear la descarga para [CÓDIGO]"**:
-- Ir **directo al código**: Inspeccionar URL o API.
-- Implementar los 3 métodos obligatorios:
-  1. `get_file_url()`
-  2. `compare_files()`
-  3. `verify_url()`
+- Ir **directo al código**: Identificar cuál de los 4 tipos de descarga corresponde:
+  - **Tipo I**: `get_file_url()` + `compare_files()` $\rightarrow$ DAG `file_download_template`
+  - **Tipo II**: `verify_download()` + `compare_files()` $\rightarrow$ DAG `direct_download_template`
+  - **Tipo III**: `check_new_data()` *(sin `compare_files`)* $\rightarrow$ DAG `data_download_template`
+  - **Tipo IV**: `get_data()` *(sin `compare_files`)* $\rightarrow$ DAG `multi_file_download_template`
 - Entregar en una sola respuesta:
-  1. Código completo de `robot.py`.
-  2. Comandos de prueba: `python validate_robot.py --type download --url "..."`.
+  1. Código completo del robot implementando los métodos de su tipo respectivo.
+  2. Comandos de prueba según tipo (`python -m unittest models/download/tests/test_download_type_<tipo>.py`).
   3. Comandos de `git add/commit/push`.
 
 ---

@@ -7,7 +7,7 @@ import pandas as pd
 import pdfplumber
 
 from models.conversion.Conversion_Base import Conversion_Base
-from models.conversion.tools.conversion_tools import search_key_words
+from models.conversion.tools.conversion_tools import search_key_words, to_numeric_datax
 
 
 class D_BO_000000462_01(Conversion_Base):
@@ -15,22 +15,11 @@ class D_BO_000000462_01(Conversion_Base):
     def extraction(self, file_path, key_words='', template_path='', page_number=1, format='%Y-%m-%d', output_path=None):
         """
         Extracts data from a PDF file based on a template and keywords.
-
-        Parameters:
-            file_path (str): Path to the PDF file.
-            key_words (str): Keywords to search for in the PDF.
-            template_path (str): Path to the template for extraction.
-            page_number (int): Page number to extract data from.
-            format (str, optional): Date format for extracted dates. Defaults to '%Y-%m-%d'.
-            output_path (str, optional): Path for the extracted Excel file. Defaults
-                to the PDF path with an '_extracted.xlsx' suffix.
-        Returns:
-            A tuple containing the extracted data and the date of the file.
-            (metadatos_dict, df_melted)
+        Uses pdfplumber (pure Python, no Java/tabula dependency).
         """
         del template_path, output_path
         try:
-            file_name = file_path.split("/")[-1]
+            file_name = os.path.basename(file_path)
             print(f"Extracting data from file: {file_name} ...")
             page_number = int(page_number)
 
@@ -71,7 +60,7 @@ class D_BO_000000462_01(Conversion_Base):
                         heading = "CONSUMIDOR: P/ A MANO C/MENUDO (Bs./Kg.)"
                     else:
                         heading = "CONSUMIDOR: P/ A MAQUINA C/MENUDO (Bs./Kg.)"
-                    header = source_table[header_index]
+
                     date_matches = re.findall(
                         r"\d{1,2}/\d{1,2}/\d{2,4}",
                         " ".join(str(value or "") for row in source_table[header_index:header_index + 2] for value in row),
@@ -87,38 +76,74 @@ class D_BO_000000462_01(Conversion_Base):
                     expected_markets = ["MUTUALISTA", "LOS POZOS", "ABASTO", "RAMADA"]
                     if heading == "CONSUMIDOR: P/ A MANO C/MENUDO (Bs./Kg.)":
                         expected_markets.append("PROMEDIO")
+
                     for row_index, source_row in enumerate(source_table[header_index + 1:]):
-                        market = str(source_row[0] or "").strip()
-                        if not market and row_index < len(expected_markets):
-                            market = expected_markets[row_index]
-                        cur_avg = clean_numeric(source_row[3] if len(source_row) > 3 else None)
+                        raw_market_str = str(source_row[0] or "").strip()
+                        
+                        # Handle cases where multiple markets were merged by pdfplumber
+                        # e.g., 'LOS POZOS\nABASTO' or 'LOS POZOS ABASTO'
+                        cell_texts = [c for c in raw_market_str.split("\n") if c.strip()]
+                        if len(cell_texts) > 1:
+                            sub_markets = cell_texts
+                        elif re.search(r"LOS\s+POZOS.*ABASTO", raw_market_str, re.IGNORECASE):
+                            sub_markets = ["LOS POZOS", "ABASTO"]
+                        else:
+                            sub_markets = [raw_market_str]
 
-                        if str(market).upper().startswith("PROMEDIO"):
-                            if cur_avg > 0:
+                        # Check if numerical columns also contain multiple newline-separated values
+                        def get_col_values(idx):
+                            val_raw = source_row[idx] if len(source_row) > idx else None
+                            if val_raw is None:
+                                return []
+                            parts = str(val_raw).split("\n")
+                            return [clean_numeric(p) for p in parts if p.strip()]
+
+                        col_mins = get_col_values(1)
+                        col_maxs = get_col_values(2)
+                        col_cur_avgs = get_col_values(3)
+                        col_prev_avgs = get_col_values(4)
+
+                        for sub_idx, sub_market in enumerate(sub_markets):
+                            market = sub_market.strip()
+                            if not market and row_index < len(expected_markets):
+                                market = expected_markets[row_index]
+
+                            # Standardize market names to match historical levels exactly
+                            market_upper = re.sub(r"\s+", " ", market.upper()).strip()
+                            if "MUTUALISTA" in market_upper:
+                                market = "MUTUALISTA"
+                            elif "LOS POZOS" in market_upper:
+                                market = "LOS POZOS"
+                            elif "ABASTO" in market_upper:
+                                market = "ABASTO"
+                            elif "RAMADA" in market_upper:
+                                market = "RAMADA"
+                            elif "PROMEDIO" in market_upper:
+                                market = "PROMEDIO"
+
+                            cur_avg = col_cur_avgs[sub_idx] if sub_idx < len(col_cur_avgs) else (col_cur_avgs[0] if col_cur_avgs else 0.0)
+
+                            if market == "PROMEDIO":
+                                continue
+
+                            min_val = col_mins[sub_idx] if sub_idx < len(col_mins) else (col_mins[0] if col_mins else 0.0)
+                            max_val = col_maxs[sub_idx] if sub_idx < len(col_maxs) else (col_maxs[0] if col_maxs else 0.0)
+                            prev_avg = col_prev_avgs[sub_idx] if sub_idx < len(col_prev_avgs) else (col_prev_avgs[0] if col_prev_avgs else 0.0)
+                            daily_variation = round(cur_avg - prev_avg, 2)
+
+                            statistics = [
+                                ("MÍN.", min_val, date_value),
+                                ("MÁX.", max_val, date_value),
+                                ("PROM.", cur_avg, date_value),
+                                ("PROM.", prev_avg, previous_date),
+                                ("VAR. DIARIA", daily_variation, date_value),
+                            ]
+
+                            for statistic, value, row_date in statistics:
                                 rows.append([
-                                    heading, "MERCADOS", "PROM.", "PROMEDIO",
-                                    date_value.strftime(format), cur_avg,
+                                    heading, "MERCADOS", statistic, market,
+                                    row_date.strftime(format), value,
                                 ])
-                            continue
-
-                        min_val = clean_numeric(source_row[1] if len(source_row) > 1 else None)
-                        max_val = clean_numeric(source_row[2] if len(source_row) > 2 else None)
-                        prev_avg = clean_numeric(source_row[4] if len(source_row) > 4 else None)
-                        daily_variation = round(cur_avg - prev_avg, 2)
-
-                        statistics = [
-                            ("MÍN.", min_val, date_value),
-                            ("MÁX.", max_val, date_value),
-                            ("PROM.", cur_avg, date_value),
-                            ("PROM.", prev_avg, previous_date),
-                            ("VAR. DIARIA", daily_variation, date_value),
-                        ]
-
-                        for statistic, value, row_date in statistics:
-                            rows.append([
-                                heading, "MERCADOS", statistic, market,
-                                row_date.strftime(format), value,
-                            ])
 
                 for line in page.extract_text_lines():
                     text = re.sub(r"\s+", " ", line["text"]).strip()
@@ -164,9 +189,7 @@ class D_BO_000000462_01(Conversion_Base):
     def validate_data_results(self, dataframe, decimal_separator, TOLERANCE=6.0):
         """
         Validates the extracted data results.
-
-        Returns:
-            bool: False if the data is valid, True on validation failure / error.
+        Returns False if valid, True on error.
         """
         try:
             if dataframe is None or dataframe.empty:
@@ -190,3 +213,4 @@ class D_BO_000000462_01(Conversion_Base):
 
 
 Robot = D_BO_000000462_01
+Executor_D_BO_000000462_01 = D_BO_000000462_01

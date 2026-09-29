@@ -44,7 +44,8 @@ class D_BO_000000043(Download_Base):
                 context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36')
                 context.set_default_timeout(600000)
                 page = context.new_page()
-                page.goto(main_url, wait_until='load')
+                target_url = main_url if 'statistics' in str(main_url).lower() else 'https://www.icco.org/statistics/'
+                page.goto(target_url, wait_until='load')
 
                 # Select the first day of the current year
                 from_input_date = page.locator("#table_1_range_from_1")
@@ -79,8 +80,7 @@ class D_BO_000000043(Download_Base):
                     download_path = os.path.join(
                         path, download.suggested_filename)
                     download.save_as(download_path)
-                    file_paths.append({
-                                "tmp_path": download_path})
+                    file_paths.append({"tmp_path": download_path, "download_url": target_url})
                     
                     return file_paths
                     

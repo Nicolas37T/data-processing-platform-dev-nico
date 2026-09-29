@@ -103,6 +103,19 @@ def create_dag(dag, connection_id, id_dag=None):
         """
         pg_hook.run(insert_sql, parameters=(execution_date, file_code, file_name, spim_code, task, str(exception), log_url, host))
 
+        try:
+            from templates.taiga_notifier import send_taiga_incident
+            send_taiga_incident(
+                dag_code=dag_run.dag_id,
+                error_type="download_exception",
+                failed_task=task,
+                exception_msg=str(exception),
+                file_code=file_code,
+                subreport_name=file_name
+            )
+        except Exception as _e_taiga:
+            print(f"[TAIGA_CALLBACK] Warning download failure: {_e_taiga}")
+
     dag.on_success_callback = log_dag_run_info
     dag.on_failure_callback = dag_failure_callback
 
