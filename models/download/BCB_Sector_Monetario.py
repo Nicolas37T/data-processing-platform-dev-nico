@@ -13,8 +13,8 @@ class BCB_Sector_Monetario(Download_Base):
         with sync_playwright() as pl:
             # Convert updated_to string to datetime object
             updated_to = format_date(updated_to)
-            # XPath to locate elements
-            report_xpath = '//article[@class="bcb-ext-card"]//a[@href]'
+            # XPath to locate downloadable Excel report links
+            report_xpath = '//a[contains(@href, ".xlsx") or contains(@href, ".xls")]'
             base_url = "https://www.bcb.gob.bo"
             try:
                 # Launch browser and navigate to main URL

@@ -5,7 +5,7 @@ from models.download.BCB_Sector_Monetario import BCB_Sector_Monetario
 
 class D_BO_000000079(BCB_Sector_Monetario):
 
-    def get_file_url(self, main_url, updated_to, key_words = "cuentas ~no bancos",format='%Y-%m-%d'):
+    def get_file_url(self, main_url, updated_to, key_words = "cuentas ~no bancos", format='%Y-%m-%d'):
         """
         Extracts download URLs for files dated after update_to date.
     

@@ -1,3 +1,4 @@
+
 import os
 import re
 import calendar
@@ -25,6 +26,7 @@ class D_BO_000000079_01(Conversion_Base):
     DATAX Platform - Conversion Robot for D_BO_000000079_01
     Report: Cuentas Monetarias de Bancos (1)
     """
+
 
     def extraction(
         self,
@@ -233,6 +235,7 @@ class D_BO_000000079_01(Conversion_Base):
     def validate_data_results(
         self,
         dataframe: pd.DataFrame,
+
         decimal_separator: str = ",",
         TOLERANCE: float = 6.0
     ) -> bool:
@@ -250,6 +253,7 @@ class D_BO_000000079_01(Conversion_Base):
         try:
             if not isinstance(dataframe, pd.DataFrame) or dataframe.empty:
                 return True
+
             if "valor" not in dataframe.columns or "fecha" not in dataframe.columns:
                 return True
 
@@ -321,3 +325,4 @@ class D_BO_000000079_01(Conversion_Base):
 
 Robot = D_BO_000000079_01
 Executor_D_BO_000000079_01 = D_BO_000000079_01
+

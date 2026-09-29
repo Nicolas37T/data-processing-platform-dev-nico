@@ -5,6 +5,7 @@ import traceback
 import pandas as pd
 import numpy as np
 
+
 class D_BO_000000315_01(Conversion_Base):
     """
     Type III Conversion Robot for Ticket D_BO_000000315_01.
@@ -52,14 +53,19 @@ class D_BO_000000315_01(Conversion_Base):
 
             # 3. Locate the Headers row dynamically
             header_row_idx = -1
+            titles_list = []
+            
             for i in range(min(15, len(df_raw))):
                 row_str = " ".join(df_raw.iloc[i].astype(str).str.upper())
                 if "CORTO PLAZO" in row_str and "MEDIANO PLAZO" in row_str:
                     header_row_idx = i
                     break
-                    
-            if header_row_idx == -1:
-                raise ValueError("Could not locate the table headers (CORTO PLAZO, MEDIANO PLAZO).")
+                else:
+                    # Todo lo que esté antes de la tabla es un título válido
+                    row_vals = df_raw.iloc[i].dropna().astype(str).str.strip().tolist()
+                    for val in row_vals:
+                        if val and val.lower() != 'nan':
+                            titles_list.append(val)
                 
             # Extract valid header names, skipping empty ones
             raw_headers = df_raw.iloc[header_row_idx].tolist()
@@ -111,7 +117,7 @@ class D_BO_000000315_01(Conversion_Base):
             file_name = os.path.basename(file_path)
             metadata_dict = {
                 "file_name": file_name,
-                "titles": ["Financiamiento de Entidades del Exterior"],
+                "titles": titles_list, 
                 "page_number": page_number
             }
 

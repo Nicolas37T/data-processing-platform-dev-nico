@@ -48,14 +48,21 @@ class D_BO_000000316_01(Conversion_Base):
                         fecha = parsed_date.strftime(format_str)
                         break
 
-            # 3. Locate the Headers row dynamically
+            # 3. Locate the Headers row dynamically and extract titles
             header_row_idx = -1
+            titles_list = []
+            
             for i in range(min(15, len(df_raw))):
                 row_str = " ".join(df_raw.iloc[i].astype(str).str.upper())
                 if "CORTO PLAZO" in row_str and "MEDIANO PLAZO" in row_str:
                     header_row_idx = i
                     break
-                    
+                else:
+                    row_vals = df_raw.iloc[i].dropna().astype(str).str.strip().tolist()
+                    for val in row_vals:
+                        if val and val.lower() != 'nan':
+                            titles_list.append(val)
+
             if header_row_idx == -1:
                 raise ValueError("Could not locate the table headers (CORTO PLAZO, MEDIANO PLAZO).")
                 
@@ -104,7 +111,7 @@ class D_BO_000000316_01(Conversion_Base):
             file_name = os.path.basename(file_path)
             metadata_dict = {
                 "file_name": file_name,
-                "titles": ["Bpy-financiamiento de Entidades del Exterior"],
+                "titles": titles_list, 
                 "page_number": page_number
             }
 
