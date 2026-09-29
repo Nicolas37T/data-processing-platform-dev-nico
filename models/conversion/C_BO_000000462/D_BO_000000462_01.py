@@ -12,10 +12,18 @@ from models.conversion.tools.conversion_tools import search_key_words, to_numeri
 
 class D_BO_000000462_01(Conversion_Base):
 
-    def extraction(self, file_path, key_words='', template_path='', page_number=1, format='%Y-%m-%d', output_path=None):
+    def extraction(
+        self,
+        file_path: str,
+        key_words: str = "",
+        template_path: str = "",
+        page_number: int = 1,
+        format: str = "%Y-%m-%d",
+        output_path: str = None,
+    ) -> tuple:
         """
-        Extracts data from a PDF file based on a template and keywords.
-        Uses pdfplumber (pure Python, no Java/tabula dependency).
+        Extracts chicken price data from a PDF file based on page keywords.
+        Uses pure pdfplumber table and text extraction.
         """
         del template_path, output_path
         try:
@@ -27,10 +35,29 @@ class D_BO_000000462_01(Conversion_Base):
                 raise ValueError(f"Unsupported file extension: {os.path.splitext(file_path)[1]}")
 
             with pdfplumber.open(file_path) as pdf:
-                page = pdf.pages[max(page_number - 1, 0)]
-                page_text = page.extract_text() or ""
-                if key_words and not search_key_words(page_text, key_words):
-                    raise ValueError(f"No tables found matching keywords: {key_words}")
+                # Find page matching key_words in full page text
+                target_page = None
+                idx = max(page_number - 1, 0)
+                if idx < len(pdf.pages):
+                    candidate = pdf.pages[idx]
+                    cand_text = candidate.extract_text() or ""
+                    if not key_words or search_key_words(cand_text, key_words):
+                        target_page = candidate
+
+                if target_page is None and key_words:
+                    for p in pdf.pages:
+                        p_text = p.extract_text() or ""
+                        if search_key_words(p_text, key_words):
+                            target_page = p
+                            break
+
+                if target_page is None:
+                    if len(pdf.pages) > 0:
+                        target_page = pdf.pages[0]
+                    else:
+                        raise ValueError(f"The report could not be found in the file with key_words: {key_words}")
+
+                page = target_page
 
                 def clean_numeric(val):
                     if val is None:
@@ -77,9 +104,7 @@ class D_BO_000000462_01(Conversion_Base):
 
                     for row_index, source_row in enumerate(source_table[header_index + 1:]):
                         raw_market_str = str(source_row[0] or "").strip()
-                        
-                        # Handle cases where multiple markets were merged by pdfplumber
-                        # e.g., 'LOS POZOS\nABASTO' or 'LOS POZOS ABASTO'
+
                         cell_texts = [c for c in raw_market_str.split("\n") if c.strip()]
                         if len(cell_texts) > 1:
                             sub_markets = cell_texts
@@ -88,9 +113,8 @@ class D_BO_000000462_01(Conversion_Base):
                         else:
                             sub_markets = [raw_market_str]
 
-                        # Check if numerical columns also contain multiple newline-separated values
-                        def get_col_values(idx):
-                            val_raw = source_row[idx] if len(source_row) > idx else None
+                        def get_col_values(idx_col):
+                            val_raw = source_row[idx_col] if len(source_row) > idx_col else None
                             if val_raw is None:
                                 return []
                             parts = str(val_raw).split("\n")
@@ -106,7 +130,6 @@ class D_BO_000000462_01(Conversion_Base):
                             if not market and row_index < len(expected_markets):
                                 market = expected_markets[row_index]
 
-                            # Standardize market names to match historical levels exactly
                             market_upper = re.sub(r"\s+", " ", market.upper()).strip()
                             if "MUTUALISTA" in market_upper:
                                 market = "MUTUALISTA"
@@ -116,14 +139,13 @@ class D_BO_000000462_01(Conversion_Base):
                                 market = "ABASTO"
                             elif "RAMADA" in market_upper:
                                 market = "RAMADA"
-                            elif "PROMEDIO" in market_upper:
-                                market = "PROMEDIO"
-
-                            cur_avg = col_cur_avgs[sub_idx] if sub_idx < len(col_cur_avgs) else (col_cur_avgs[0] if col_cur_avgs else 0.0)
+                            else:
+                                continue
 
                             if market not in expected_markets:
                                 continue
 
+                            cur_avg = col_cur_avgs[sub_idx] if sub_idx < len(col_cur_avgs) else (col_cur_avgs[0] if col_cur_avgs else 0.0)
                             min_val = col_mins[sub_idx] if sub_idx < len(col_mins) else (col_mins[0] if col_mins else 0.0)
                             max_val = col_maxs[sub_idx] if sub_idx < len(col_maxs) else (col_maxs[0] if col_maxs else 0.0)
                             prev_avg = col_prev_avgs[sub_idx] if sub_idx < len(col_prev_avgs) else (col_prev_avgs[0] if col_prev_avgs else 0.0)
@@ -175,16 +197,16 @@ class D_BO_000000462_01(Conversion_Base):
             dataframe["valor"] = dataframe["valor"].apply(clean_numeric)
 
             metadata = {
-                "file_name": os.path.basename(file_path),
+                "file_name": file_name,
                 "titles": [],
-                "page_number": page_number,
+                "page_number": int(page.page_number),
             }
             return metadata, dataframe
         except Exception:
             traceback.print_exc()
             return ""
 
-    def validate_data_results(self, dataframe, decimal_separator, TOLERANCE=6.0):
+    def validate_data_results(self, dataframe: pd.DataFrame, decimal_separator: str = ",", TOLERANCE: float = 6.0) -> bool:
         """
         Validates the extracted data results.
         Returns False if valid, True on error.

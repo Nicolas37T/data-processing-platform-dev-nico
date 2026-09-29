@@ -48,29 +48,54 @@ class D_BO_000000289_01(Conversion_Base):
             if an unrecoverable error occurs.
         """
         try:
-            file_name = os.path.basename(file_path)
-
-            # 1. Resolve the temporal cut dynamically from the file name.
-            cut_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", file_name)
-            if cut_match:
-                cut_year = int(cut_match.group(1))
-                cut_month = int(cut_match.group(2))
-                cut_day = int(cut_match.group(3))
-            else:
-                # Fallback for names formatted as YYYYMM (no separators).
-                cut_match = re.search(r"(\d{4})(\d{2})", file_name)
-                cut_year = int(cut_match.group(1))
-                cut_month = int(cut_match.group(2))
-                cut_day = calendar.monthrange(cut_year, cut_month)[1]
-            cut_date = f"{cut_year:04d}-{cut_month:02d}-{cut_day:02d}"
-
-            # 2. Load the target sheet (raw, without header inference).
+            # 1. Load the target sheet (raw, without header inference).
             sheet_index = max(int(page_number) - 1, 0)
             sheet = pd.read_excel(file_path, sheet_name=sheet_index, header=None)
 
             # Nested helper: normalize any cell into a single-spaced string.
             def clean_text(value) -> str:
                 return re.sub(r"\s+", " ", str(value)).strip()
+
+            # 2. Resolve the temporal cut dynamically.
+            # Primary source of truth: header text inside the sheet (e.g. 'AL 30 DE JUNIO DE 2026')
+            cut_year, cut_month, cut_day = None, None, None
+            for r in range(min(15, len(sheet))):
+                for val in sheet.iloc[r].dropna():
+                    cell = clean_text(val)
+                    m = re.search(r"AL\s+(\d{1,2})\s+DE\s+([^\s]+)\s+DE\s+(\d{4})", cell, re.IGNORECASE)
+                    if m:
+                        c_day = int(m.group(1))
+                        c_month = month_to_number(m.group(2).lower())
+                        c_year = int(m.group(3))
+                        if c_month and c_year:
+                            cut_day = c_day
+                            cut_month = c_month
+                            cut_year = c_year
+                            break
+                if cut_year and cut_month:
+                    break
+
+            # Secondary fallback: parse from file_name or full file_path
+            file_name = os.path.basename(file_path)
+            if not cut_year or not cut_month:
+                for candidate in [file_name, file_path]:
+                    m = re.search(r"(\d{4})-(\d{2})-(\d{2})", candidate)
+                    if m:
+                        cut_year, cut_month, cut_day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                        break
+                    m = re.search(r"(\d{4})(\d{2})", candidate)
+                    if m:
+                        cut_year, cut_month = int(m.group(1)), int(m.group(2))
+                        cut_day = calendar.monthrange(cut_year, cut_month)[1]
+                        break
+
+            if cut_year and cut_month and not cut_day:
+                cut_day = calendar.monthrange(cut_year, cut_month)[1]
+
+            if not cut_year or not cut_month:
+                raise ValueError(f"Could not determine cut date for file: {file_path}")
+
+            cut_date = f"{cut_year:04d}-{cut_month:02d}-{cut_day:02d}"
 
             # 3. Locate the header row (the one holding the month names).
             header_row = None
