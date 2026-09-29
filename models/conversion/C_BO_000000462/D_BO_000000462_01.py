@@ -121,7 +121,7 @@ class D_BO_000000462_01(Conversion_Base):
 
                             cur_avg = col_cur_avgs[sub_idx] if sub_idx < len(col_cur_avgs) else (col_cur_avgs[0] if col_cur_avgs else 0.0)
 
-                            if market == "PROMEDIO":
+                            if market not in expected_markets:
                                 continue
 
                             min_val = col_mins[sub_idx] if sub_idx < len(col_mins) else (col_mins[0] if col_mins else 0.0)
