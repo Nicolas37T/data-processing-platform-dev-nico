@@ -1,10 +1,10 @@
+from models.conversion.Conversion_Base import Conversion_Base
 import os
 import re
 import traceback
 import pandas as pd
 from typing import Tuple
 
-from models.conversion.Conversion_Base import Conversion_Base
 from models.conversion.tools.conversion_tools import to_numeric_datax
 
 
@@ -102,9 +102,18 @@ class D_BO_000000418_02(Conversion_Base):
 
                 df_melted = df_raw[nv_cols + [fecha_col, valor_col]].copy()
                 df_melted.columns = nv_cols + ["fecha", "valor"]
+
+                # Ensure always exactly nv1..nv6 to match template structure
+                REQUIRED_NV = ["nv1", "nv2", "nv3", "nv4", "nv5", "nv6"]
+                for nv in REQUIRED_NV:
+                    if nv not in df_melted.columns:
+                        # Insert missing nv column before 'fecha'
+                        fecha_idx = df_melted.columns.get_loc("fecha")
+                        df_melted.insert(fecha_idx, nv, None)
+
                 df_melted["fecha"] = pd.to_datetime(df_melted["fecha"]).dt.strftime("%Y-%m-%d")
                 df_melted["valor"] = to_numeric_datax(df_melted["valor"], decimal_separator=".")
-                for col in nv_cols:
+                for col in REQUIRED_NV:
                     df_melted[col] = df_melted[col].where(df_melted[col].notna(), None)
 
                 metadata = {
@@ -292,6 +301,10 @@ class D_BO_000000418_02(Conversion_Base):
 
             return False
         except Exception:
+            import traceback; traceback.print_exc()
             return True
 
 
+
+Executor_D_BO_000000418_02 = D_BO_000000418_02
+Robot = D_BO_000000418_02
