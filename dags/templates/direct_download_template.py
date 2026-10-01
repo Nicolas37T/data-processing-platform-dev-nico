@@ -122,6 +122,9 @@ def create_dag(dag, connection_id, id_dag=None):
         """
         try:
             pg_hook.run(insert_sql, parameters=(execution_date, file_code, file_name, spim_code, task, str(exception), log_url, host))
+            logger.info("Recorded failure details into 'dag_run_exceptions' table.")
+        except Exception as log_err:
+            logger.error(f"Failed to record exception in 'dag_run_exceptions': {log_err}")
 
         try:
             from templates.taiga_notifier import send_taiga_incident
@@ -135,9 +138,6 @@ def create_dag(dag, connection_id, id_dag=None):
             )
         except Exception as _e_taiga:
             print(f"[TAIGA_CALLBACK] Warning download failure: {_e_taiga}")
-            logger.info("Recorded failure details into 'dag_run_exceptions' table.")
-        except Exception as log_err:
-            logger.error(f"Failed to record exception in 'dag_run_exceptions': {log_err}")
 
     dag.on_success_callback = log_dag_run_info
     dag.on_failure_callback = dag_failure_callback
