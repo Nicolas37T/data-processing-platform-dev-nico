@@ -418,8 +418,9 @@ class D_BO_000000492_01(Conversion_Base):
                 print(f"Notice: 'columns_to_review' not found ({e}). Defaulting to hierarchy columns.")
                 columns_to_review = [c for c in last_conversion_cols if str(c).startswith('nv')]
 
-            # nv4 is the dynamic peak-hour column for MAXIMA (MW) — exclude from level check
-            columns_to_review = [c for c in columns_to_review if c != 'nv4']
+            # nv4 = dynamic peak-hour; nv2 = companies (can change); nv3 = substations (can change)
+            # Only nv1 (metric type) is truly static — exclude the rest
+            columns_to_review = [c for c in columns_to_review if c not in ('nv2', 'nv3', 'nv4')]
 
             if not columns_to_review:
                 return data_file
@@ -448,12 +449,12 @@ class D_BO_000000492_01(Conversion_Base):
         return ""
 
     def report_data_validation(self, *args, **kwargs):
-        """Override: ensure nv4 is not persisted in columns_to_review of new SQLite."""
+        """Override: ensure only nv1 remains in columns_to_review of new SQLite."""
         res = super().report_data_validation(*args, **kwargs)
         if isinstance(res, dict) and res.get("conversion_path") and res.get("file_extension") == "sqlite":
             try:
                 conn = sqlite3.connect(res["conversion_path"])
-                conn.execute("DELETE FROM columns_to_review WHERE column = 'nv4'")
+                conn.execute("DELETE FROM columns_to_review WHERE column NOT IN ('nv1')")
                 conn.commit()
                 conn.close()
             except Exception:
