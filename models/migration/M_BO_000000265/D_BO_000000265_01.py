@@ -1,4 +1,4 @@
-"""Migration robot for report D_BO_000000255_01: Precio Referencial para Productos."""
+"""Migration robot for report D_BO_000000265_01: Remesas de Trabajadores Recibidas según País de Origen."""
 
 import re
 from typing import Tuple
@@ -6,15 +6,15 @@ import pandas as pd
 from models.migration.Migration_Base import Migration_Base
 
 
-class D_BO_000000255_01(Migration_Base):
-    """Migration robot for D_BO_000000255_01."""
+class D_BO_000000265_01(Migration_Base):
+    """Migration robot for D_BO_000000265_01."""
 
     def standard_report(self, dataframe: pd.DataFrame, conversion_factor: int) -> Tuple[dict, pd.DataFrame]:
         """
         Enrich dataframe with clean columns and metric metadata.
         - metrica: 'moneda'
-        - unidad_metrica: 'BOB'
-        - conversion_factor: 1
+        - unidad_metrica: 'USD'
+        - conversion_factor: 1000000
         """
         dataframe.columns = [re.sub(r"[\t\xa0]+", "", str(c)).strip() for c in dataframe.columns]
 
@@ -30,15 +30,15 @@ class D_BO_000000255_01(Migration_Base):
         )
 
         try:
-            factor_val = int(conversion_factor) if conversion_factor is not None else 1
+            factor_val = int(conversion_factor) if conversion_factor is not None else 1000000
         except (ValueError, TypeError):
-            factor_val = 1
+            factor_val = 1000000
 
-        if factor_val <= 1 and 1 > 1:
-            factor_val = 1
+        if factor_val <= 1 and 1000000 > 1:
+            factor_val = 1000000
 
         return ({"conversion_factor": factor_val}, dataframe)
 
 
 
-Robot = D_BO_000000255_01
+Robot = D_BO_000000265_01

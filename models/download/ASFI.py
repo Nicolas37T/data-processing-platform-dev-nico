@@ -98,6 +98,10 @@ class ASFI(Download_Base):
             list: List of dictionaries containing information about files that meet the criteria.
         """
         print("Comparing files...")
+        if not files_paths or not isinstance(files_paths, (list, tuple)):
+            print(f"No files downloaded to compare (files_paths={files_paths}).")
+            return False
+
         # List to store file dictionaries
         files_dicts = []
 

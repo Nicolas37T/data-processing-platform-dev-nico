@@ -39,19 +39,8 @@ class D_BO_000000290(Download_Base):
                 page.goto(main_url,wait_until='domcontentloaded')
                 
                 # Filter links that match a specific pattern
-                links_filtred = [link.get_attribute('href') for link in page.query_selector_all('//a[@href]') if re.search(r"primera.*entidad",link.get_attribute('href'),re.IGNORECASE)]
-                for link in links_filtred:
-                    # Extract date information from the link
-                    date = re.search(re_date, link,re.IGNORECASE).group(1,2)
-                    month = date[1]
-                    if not month.isdigit():
-                        month = month_to_number(month) if month_to_number(month) else month_abr_to_number(month)
-                    day = last_day_month(year=int(date[0]),month=int(month))
-                    
-                    # Format the date to compare with updated_to
-                    date_formated = format_date(f"{date[0]}-{month}-{day}")
-                    if date_formated>updated_to:
-                        files_urls.append(base_url + link)
+                links_filtered = [link.get_attribute('href') for link in page.query_selector_all('//a[@href]') if re.search(r"primera.*entidad", link.get_attribute('href'), re.IGNORECASE)]
+                files_urls.extend([base_url + link for link in links_filtered])
 
                 # If no files are found after updated_to           
                 if not len(files_urls):
@@ -84,21 +73,22 @@ class D_BO_000000290(Download_Base):
             list or bool: A list of dictionaries with information about files that meet the criteria of being more recent than 'updated_to'. Returns False if no more recent files are found.
         """
         print("Comparing files...")
-        # List to store file dictionaries
-        files_dicts = []
+        if not files_paths or not isinstance(files_paths, (list, tuple)):
+            print(f"No files downloaded to compare (files_paths={files_paths}).")
+            return False
 
-        # Convert updated_to string to datetime object
+        files_dicts = []
         updated_to = format_date(updated_to)
-        
-        # Iterate over each file path
+
         for file in files_paths: 
             re_date = r'(\d{1,2})\D*((?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic))\D*(\d{4})'
             re_month = r'^((?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic))'
             print(f"Comparing file: {file['tmp_path']}")
 
-            file_name = os.path.basename(file['tmp_path'])
-            extension = os.path.splitext(file_name)[1]
             try:
+                file_name = os.path.basename(file['tmp_path'])
+                extension = os.path.splitext(file_name)[1].lower()
+
                 if "zip" in extension:
                     excel_extensions = {'.xls', '.xlsx'}
                     folder_path = os.path.dirname(file['tmp_path'])
@@ -118,56 +108,83 @@ class D_BO_000000290(Download_Base):
                                 excel_files.append(os.path.join(root, f))
 
                     if not excel_files:
-                        raise FileNotFoundError(f"No se encontro ningun archivo Excel en el ZIP: {file['tmp_path']}")
+                        raise FileNotFoundError(f"No se encontró ningún archivo Excel en el ZIP: {file['tmp_path']}")
 
                     file['zip_path'] = file['tmp_path']
                     file['tmp_path'] = excel_files[0]
+
+                # Read Excel file dynamically (supports both .xls and .xlsx)
+                try:
+                    df_new_file = pd.read_excel(file["tmp_path"], sheet_name=0)
+                except Exception:
+                    try:
+                        df_new_file = pd.read_excel(file["tmp_path"], sheet_name=0, engine='openpyxl')
+                    except Exception:
+                        df_new_file = pd.read_excel(file["tmp_path"], sheet_name=0, engine='xlrd')
+
+                for column in df_new_file.columns:
+                    if df_new_file[column].isna().all():
+                        df_new_file.drop(columns=[column], inplace=True)
+
+                # 1. Primary date search: Header cell with "AL <day> DE <month> DE <year>"
+                date_formated = None
+                for r in range(min(15, len(df_new_file))):
+                    for val in df_new_file.iloc[r].dropna():
+                        val_s = str(val).strip()
+                        m = re.search(r"AL\s+(\d{1,2})\s+DE\s+([^\s]+)\s+DE\s+(\d{4})", val_s, re.IGNORECASE)
+                        if m:
+                            c_day = int(m.group(1))
+                            m_name = m.group(2).lower()
+                            c_month = month_to_number(m_name) or month_abr_to_number(m_name)
+                            c_year = int(m.group(3))
+                            if c_month and c_year:
+                                c_day = last_day_month(year=c_year, month=c_month)
+                                date_formated = format_date(f"{c_year:04d}-{c_month:02d}-{c_day:02d}")
+                                break
+                    if date_formated:
+                        break
+
+                # 2. Secondary fallback: check rows for column headers and dates
+                if not date_formated:
+                    dataframe_to_look = df_new_file.iloc[:10]
+                    matches = []
+                    months = []
+                    for column in dataframe_to_look.columns:
+                        for index, value in dataframe_to_look[column].items():
+                            value_str = str(value).strip().lower()
+                            match_value = re.search(re_date, value_str, re.IGNORECASE)
+                            if match_value:
+                                matches.append(match_value)
+                            month_value = re.search(re_month, value_str, re.IGNORECASE)
+                            if month_value:
+                                sub_set = df_new_file.loc[index+1:, column].replace(0, np.nan)
+                                if not sub_set.isna().all():
+                                    months.append(month_value)
+
+                    if matches and months:
+                        date = matches[-1].group(1, 2, 3)
+                        month = months[-1].group(1)
+                        month = month_to_number(month) if month_to_number(month) else month_abr_to_number(month)
+                        day = last_day_month(year=int(date[2]), month=month)
+                        date_formated = format_date(f"{date[2]}-{month}-{day}")
+
+                if not date_formated:
+                    print(f"Could not extract date from {file['tmp_path']}")
+                    continue
+
+                # Check if the file is newer than the provided date
+                if date_formated > updated_to:
+                    update_to_formatted = date_formated.strftime(format)
+                    print(f"File date: {update_to_formatted}. Adding to filtered files.")
+                    file["updated_to"] = update_to_formatted
+                    files_dicts.append(file)
+                else:
+                    print("File does not meet update criteria. Skipping...")
+
             except Exception as e:
-                print(f"An error ocurred: {e}")
+                print(f"An error occurred: {e}")
                 traceback.print_exc()
                 continue
-
-            # Extract date from the file
-            df_new_file = pd.read_excel(file["tmp_path"],sheet_name=0,engine='xlrd')
-            for column in df_new_file.columns:
-                if df_new_file[column].isna().all():
-                    df_new_file.drop(columns=[column], inplace=True)            
-            
-            # Extract a subset of rows from the DataFrame to search for dates
-            dataframe_to_look = df_new_file.iloc[:10]
-            matches = []
-            months = []
-            for column in dataframe_to_look.columns:
-                for index, value in dataframe_to_look[column].items():
-                    # Convert the value to lowercase and strip whitespace
-                    value_str = str(value).strip().lower()
-                    # Search for matches of the date pattern in the value string    
-                    match_value = re.search(re_date,value_str,re.IGNORECASE)
-                    if match_value :
-                        matches.append(match_value)
-                    month_value = re.search(re_month, value_str, re.IGNORECASE)
-                    if month_value:
-                        sub_set = df_new_file.loc[index+1:,column].replace(0,np.nan)
-                        if not sub_set.isna().all():
-                            months.append(month_value)
-
-            date = matches[-1].group(1,2,3)
-            month = months[-1].group(1)
-            month = month_to_number(month) if month_to_number(month) else month_abr_to_number(month)
-            day = last_day_month(year=int(date[2]),month=month)
-
-            date_formated = format_date(f"{date[2]}-{month}-{day}")
-            
-            # Check if the file is newer than the provided date
-            if date_formated>updated_to:
-                # Format the update date
-                update_to_formatted = date_formated.strftime(format)
-                print(f"File date: {update_to_formatted}. Adding to filtered files.")
-                file["updated_to"] = update_to_formatted
-                files_dicts.append(file)                
-            
-            else:
-                print("File does not meet update criteria. Skipping...") 
 
         # Check if any files were found after the updated date
         if not len(files_dicts):

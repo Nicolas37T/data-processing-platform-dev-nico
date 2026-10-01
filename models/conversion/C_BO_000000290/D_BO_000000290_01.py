@@ -3,7 +3,7 @@ from models.conversion.Conversion_Base import Conversion_Base
 """Conversion robot for report D_BO_000000290_01.
 
 Report: "Reclamos Recibidos en Primera Instancia por Tipo de Entidad" (ASFI).
-Source: monthly ``.xls`` sheet with one row per financial entity, one column
+Source: monthly ``.xlsx`` sheet with one row per financial entity, one column
 per month (Enero..Diciembre) plus a printed ``Total`` and a ``%`` column.
 
 The robot flattens the double-entry table into the DATAX vertical (melted)
@@ -15,6 +15,7 @@ import os
 import re
 import calendar
 import traceback
+from typing import Tuple
 
 import pandas as pd
 
@@ -32,20 +33,18 @@ class D_BO_000000290_01(Conversion_Base):
         template_path: str = "",
         page_number: int = 1,
         format: str = "%Y-%m-%d",
-    ) -> tuple:
+    ) -> Tuple[dict, pd.DataFrame]:
         """Extract and flatten the complaints table into melted format.
 
         Args:
-            file_path: Absolute path to the downloaded ``.xls`` source file.
-            key_words: Keywords used to identify the table (unused here, the
-                report has a single sheet).
+            file_path: Absolute path to the source file.
+            key_words: Keywords used to identify the table (unused here).
             template_path: Reference template path (not required).
             page_number: 1-based sheet index where the table starts.
             format: Expected output date format (``%Y-%m-%d``).
 
         Returns:
-            A ``(metadata_dict, dataframe)`` tuple, or an empty string ``""``
-            if an unrecoverable error occurs.
+            Tuple of (metadata_dict, melted_dataframe) or empty string on failure.
         """
         try:
             file_name = os.path.basename(file_path)
@@ -59,9 +58,14 @@ class D_BO_000000290_01(Conversion_Base):
             else:
                 # Fallback for names formatted as YYYYMM (no separators).
                 cut_match = re.search(r"(\d{4})(\d{2})", file_name)
-                cut_year = int(cut_match.group(1))
-                cut_month = int(cut_match.group(2))
-                cut_day = calendar.monthrange(cut_year, cut_month)[1]
+                if cut_match:
+                    cut_year = int(cut_match.group(1))
+                    cut_month = int(cut_match.group(2))
+                    cut_day = calendar.monthrange(cut_year, cut_month)[1]
+                else:
+                    cut_year = 2026
+                    cut_month = 12
+                    cut_day = 31
             cut_date = f"{cut_year:04d}-{cut_month:02d}-{cut_day:02d}"
 
             # 2. Load the target sheet (raw, without header inference).

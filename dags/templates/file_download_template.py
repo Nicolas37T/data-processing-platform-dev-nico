@@ -174,6 +174,10 @@ def create_dag(dag, connection_id, id_dag=None):
         file_path_download = ti.xcom_pull(key='file_paths', task_ids='file_download')
         updated_to = (ti.xcom_pull(key='file_updated_to', task_ids='read_download_data'))
         ti.xcom_push(key='file_path_download', value=file_path_download)
+        if not file_path_download or not isinstance(file_path_download, (list, tuple)):
+            print(f"No files downloaded (file_paths={file_path_download}). Branching to download_revision.")
+            ti.xcom_push(key='files_dicts', value=[])
+            return 'download_revision'
         files_dicts = executor.compare_files(file_path_download, updated_to)
         ti.xcom_push(key='files_dicts', value=files_dicts)
         if not files_dicts:

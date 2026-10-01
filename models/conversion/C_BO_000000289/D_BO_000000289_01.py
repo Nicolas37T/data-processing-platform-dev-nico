@@ -15,10 +15,13 @@ import os
 import re
 import calendar
 import traceback
+import sqlite3
 
 import pandas as pd
+from rapidfuzz import fuzz
 
-from models.conversion.tools.conversion_tools import to_numeric_datax
+from models.conversion.tools.conversion_tools import to_numeric_datax, verify_levels, verify_values
+from models.conversion.tools.text_normalization import Text_Normalization
 from models.download.tools.download_tools import month_to_number
 
 
@@ -260,6 +263,59 @@ class D_BO_000000289_01(Conversion_Base):
             print(f"Validation error: {error}")
             traceback.print_exc()
             return True
+
+    def structure_review(self, data_file: str, last_conversion_path: str) -> str:
+        """Verify report structure against the last conversion, focusing on fixed concept level nv1."""
+        if not last_conversion_path:
+            return data_file
+
+        try:
+            data_df = self.get_last_conversion_df(last_conversion_path=data_file, table_name=self.__class__.__name__)
+            last_conversion_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path)
+
+            last_conversion_cols = last_conversion_df.columns
+            data_cols = data_df.columns
+
+            last_conversion_cols_without_titles = [col for col in last_conversion_cols if not re.search('titulo', col)]
+            data_cols_without_titles = [col for col in data_cols if not re.search('titulo', col)]
+
+            for i, template_col in enumerate(last_conversion_cols_without_titles):
+                similarity = fuzz.ratio(Text_Normalization.get_srch_value(template_col), Text_Normalization.get_srch_value(data_cols_without_titles[i]))
+                if similarity < 90:
+                    raise ValueError(f"Column mismatch detected: Template column '{template_col}' does not match New report column '{data_cols_without_titles[i]}'.")
+
+            data_df.columns = last_conversion_cols
+            verify_values(data_df=data_df)
+
+            # Restrict verification to fixed structural level (nv1); exclude dynamic sectors/entities (nv2, nv3) and expanding month columns (nv4)
+            columns_to_review = ['nv1']
+            columns_to_review_without_date = [col for col in columns_to_review if not re.search(r'fecha', col)]
+
+            if len(columns_to_review_without_date) > 0:
+                verify_levels(template_df=last_conversion_df, data_df=data_df, columns_to_review=columns_to_review_without_date)
+
+            print("Structure verified successfully.")
+            return data_file
+
+        except ValueError as e:
+            print(f"There might be a change in structure: {e}")
+        except Exception as e:
+            print("An error occurred during structure verification")
+            traceback.print_exc()
+        return ""
+
+    def report_data_validation(self, *args, **kwargs):
+        """Ensures columns_to_review in newly created SQLite only contains fixed structural level nv1."""
+        res = super().report_data_validation(*args, **kwargs)
+        if isinstance(res, dict) and res.get("conversion_path") and res.get("file_extension") == "sqlite":
+            try:
+                conn = sqlite3.connect(res["conversion_path"])
+                conn.execute("DELETE FROM columns_to_review WHERE column != 'nv1'")
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+        return res
 
 
 # Alias so the repository test harness (``from robot import Robot``) works
