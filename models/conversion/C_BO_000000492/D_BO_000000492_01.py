@@ -1,4 +1,9 @@
 from models.conversion.Conversion_Base import Conversion_Base
+import sqlite3
+import re as _re
+from models.conversion.tools.conversion_tools import verify_frecuency, verify_levels, verify_values
+from rapidfuzz import fuzz
+from models.conversion.tools.text_normalization import Text_Normalization
 """
 Conversion robot for CNDC daily energy and power demand report.
 
@@ -375,6 +380,85 @@ class D_BO_000000492_01(Conversion_Base):
             print(f"Validation error: {error}")
             traceback.print_exc()
             return True
+
+
+    def structure_review(self, data_file: str, last_conversion_path: str):
+        """Override: exclude nv4 (dynamic peak-hour) from level verification."""
+        if not last_conversion_path:
+            return data_file
+        try:
+            data_df = self.get_last_conversion_df(last_conversion_path=data_file, table_name=self.__class__.__name__)
+            last_conversion_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path)
+
+            last_conversion_cols = last_conversion_df.columns
+            data_cols = data_df.columns
+
+            last_without_titles = [c for c in last_conversion_cols if not _re.search('titulo', c)]
+            data_without_titles = [c for c in data_cols if not _re.search('titulo', c)]
+
+            for i, template_col in enumerate(last_without_titles):
+                similarity = fuzz.ratio(
+                    Text_Normalization.get_srch_value(template_col),
+                    Text_Normalization.get_srch_value(data_without_titles[i])
+                )
+                if similarity < 90:
+                    raise ValueError(
+                        f"Column mismatch: '{template_col}' vs '{data_without_titles[i]}'"
+                    )
+
+            data_df.columns = last_conversion_cols
+            verify_values(data_df=data_df)
+
+            try:
+                columns_to_review_df = self.get_last_conversion_df(
+                    last_conversion_path=last_conversion_path, table_name='columns_to_review'
+                )
+                columns_to_review = columns_to_review_df['column'].unique().tolist()
+            except Exception as e:
+                print(f"Notice: 'columns_to_review' not found ({e}). Defaulting to hierarchy columns.")
+                columns_to_review = [c for c in last_conversion_cols if str(c).startswith('nv')]
+
+            # nv4 is the dynamic peak-hour column for MAXIMA (MW) — exclude from level check
+            columns_to_review = [c for c in columns_to_review if c != 'nv4']
+
+            if not columns_to_review:
+                return data_file
+
+            columns_to_review_without_date = [c for c in columns_to_review if not _re.search(r'fecha', c)]
+
+            if columns_to_review_without_date:
+                verify_levels(
+                    template_df=last_conversion_df,
+                    data_df=data_df,
+                    columns_to_review=columns_to_review_without_date,
+                )
+
+            if len(columns_to_review) != len(columns_to_review_without_date):
+                verify_frecuency(template_df=last_conversion_df, data_df=data_df)
+
+            print("Structure verified successfully.")
+            return data_file
+
+        except ValueError as e:
+            print(f"There might be a change in structure: {e}")
+        except Exception as e:
+            print("An error occurred during structure verification")
+            import traceback
+            traceback.print_exc()
+        return ""
+
+    def report_data_validation(self, *args, **kwargs):
+        """Override: ensure nv4 is not persisted in columns_to_review of new SQLite."""
+        res = super().report_data_validation(*args, **kwargs)
+        if isinstance(res, dict) and res.get("conversion_path") and res.get("file_extension") == "sqlite":
+            try:
+                conn = sqlite3.connect(res["conversion_path"])
+                conn.execute("DELETE FROM columns_to_review WHERE column = 'nv4'")
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+        return res
 
 
 Robot = D_BO_000000492_01
