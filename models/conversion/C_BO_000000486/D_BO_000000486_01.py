@@ -2,10 +2,16 @@ from models.conversion.Conversion_Base import Conversion_Base
 import os
 import re
 import traceback
+import sqlite3
 import pandas as pd
 from datetime import datetime
+try:
+    from rapidfuzz import fuzz
+except ImportError:
+    from fuzzywuzzy import fuzz
 from models.download.tools.download_tools import read_excel
-from models.conversion.tools.conversion_tools import format_date, to_numeric_datax
+from models.conversion.tools.text_normalization import Text_Normalization
+from models.conversion.tools.conversion_tools import format_date, to_numeric_datax, verify_frecuency, verify_levels, verify_values
 
 
 class D_BO_000000486_01(Conversion_Base):
@@ -133,6 +139,77 @@ class D_BO_000000486_01(Conversion_Base):
             print(f"Validation error: {e}")
             traceback.print_exc()
             return True
+
+    def structure_review(self, data_file: str, last_conversion_path: str):
+        """
+        Verifies the structure of a new data file against a previous conversion.
+        Excludes 'nv2' from level verification because dispatched generation units
+        and plants vary dynamically based on CNDC daily operational schedules.
+        """
+        if not last_conversion_path:
+            return data_file
+
+        try:
+            data_df = self.get_last_conversion_df(last_conversion_path=data_file, table_name=self.__class__.__name__)
+            last_conversion_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path)
+
+            last_conversion_cols = last_conversion_df.columns
+            data_cols = data_df.columns
+
+            last_conversion_cols_without_titles = [col for col in last_conversion_cols if not re.search('titulo', col)]
+            data_cols_without_titles = [col for col in data_cols if not re.search('titulo', col)]
+
+            for i, template_col in enumerate(last_conversion_cols_without_titles):
+                similarity = fuzz.ratio(Text_Normalization.get_srch_value(template_col), Text_Normalization.get_srch_value(data_cols_without_titles[i]))
+                if similarity < 90:
+                    raise ValueError(f"Column mismatch detected: Template column '{template_col}' does not match New report column '{data_cols_without_titles[i]}'.")
+
+            data_df.columns = last_conversion_cols
+            verify_values(data_df=data_df)
+
+            try:
+                columns_to_review_df = self.get_last_conversion_df(last_conversion_path=last_conversion_path, table_name='columns_to_review')
+                columns_to_review = columns_to_review_df['column'].unique().tolist()
+            except Exception as e:
+                print(f"Notice: 'columns_to_review' table not found in {last_conversion_path} ({e}). Defaulting to hierarchy columns.")
+                columns_to_review = [col for col in last_conversion_cols if str(col).startswith('nv')]
+
+            # Exclude nv2: generating units vary per daily publication
+            columns_to_review = [col for col in columns_to_review if col != 'nv2']
+
+            if not columns_to_review:
+                return data_file
+
+            columns_to_review_without_date = [col for col in columns_to_review if not re.search(r'fecha', col)]
+
+            if len(columns_to_review_without_date) > 0:
+                verify_levels(template_df=last_conversion_df, data_df=data_df, columns_to_review=columns_to_review_without_date)
+
+            if len(columns_to_review) != len(columns_to_review_without_date):
+                verify_frecuency(template_df=last_conversion_df, data_df=data_df)
+
+            print("Structure verified successfully.")
+            return data_file
+
+        except ValueError as e:
+            print(f"There might be a change in structure: {e}")
+        except Exception as e:
+            print("An error occurred during structure verification")
+            traceback.print_exc()
+        return ""
+
+    def report_data_validation(self, *args, **kwargs):
+        """Ensures columns_to_review in newly created SQLite excludes 'nv2'."""
+        res = super().report_data_validation(*args, **kwargs)
+        if isinstance(res, dict) and res.get("conversion_path") and res.get("file_extension") == "sqlite":
+            try:
+                conn = sqlite3.connect(res["conversion_path"])
+                conn.execute("DELETE FROM columns_to_review WHERE column = 'nv2'")
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+        return res
 
 
 Executor_D_BO_000000486_01 = D_BO_000000486_01
