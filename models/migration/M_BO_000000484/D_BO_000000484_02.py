@@ -1,4 +1,4 @@
-"""Migration robot for report D_BO_000000484_01: Tazas de Interes Activas."""
+"""Migration robot for report D_BO_000000484_02: Tazas de Interes Pasivas."""
 
 import re
 from typing import Tuple
@@ -6,8 +6,8 @@ import pandas as pd
 from models.migration.Migration_Base import Migration_Base
 
 
-class D_BO_000000484_01(Migration_Base):
-    """Migration robot for D_BO_000000484_01."""
+class D_BO_000000484_02(Migration_Base):
+    """Migration robot for D_BO_000000484_02."""
 
     def standard_report(self, dataframe: pd.DataFrame, conversion_factor: int) -> Tuple[dict, pd.DataFrame]:
         """
@@ -23,7 +23,7 @@ class D_BO_000000484_01(Migration_Base):
                 )
 
         def get_metric(row) -> str:
-            texts = [str(row.get(c, "")).upper() for c in reversed(['titulo1', 'titulo2', 'titulo3', 'nv1', 'nv2', 'nv3', 'nv4'])]
+            texts = [str(row.get(c, "")).upper() for c in reversed(['titulo1', 'titulo2', 'titulo3', 'nv1', 'nv2', 'nv3', 'nv4', 'nv5'])]
             combined = " ".join(texts)
             if "%" in combined or "PARTICIPACI" in combined:
                 return "porcentaje"
@@ -38,7 +38,7 @@ class D_BO_000000484_01(Migration_Base):
             return "tasa"
 
         def get_unit(row) -> str:
-            texts = [str(row.get(c, "")).upper() for c in reversed(['titulo1', 'titulo2', 'titulo3', 'nv1', 'nv2', 'nv3', 'nv4'])]
+            texts = [str(row.get(c, "")).upper() for c in reversed(['titulo1', 'titulo2', 'titulo3', 'nv1', 'nv2', 'nv3', 'nv4', 'nv5'])]
             combined = " ".join(texts)
             if "%" in combined or "PARTICIPACI" in combined:
                 return "%"
@@ -83,4 +83,4 @@ class D_BO_000000484_01(Migration_Base):
         return ({"conversion_factor": 1}, dataframe)
 
 
-Robot = D_BO_000000484_01
+Robot = D_BO_000000484_02
