@@ -7,10 +7,7 @@ from typing import Tuple, Union
 import pandas as pd
 import pdfplumber
 
-from models.conversion.tools.conversion_tools import (
-    month_to_number,
-    to_numeric_datax,
-)
+from models.conversion.tools.conversion_tools import month_to_number, to_numeric_datax
 
 
 class D_BO_000000484_01(Conversion_Base):
@@ -67,6 +64,7 @@ class D_BO_000000484_01(Conversion_Base):
                     )
                     detected_page = 1
                 except Exception:
+                    import traceback; traceback.print_exc()
                     page_idx = max(0, page_number - 1)
                     df_raw = pd.read_excel(
                         file_path, sheet_name=page_idx, header=None
@@ -182,6 +180,7 @@ class D_BO_000000484_01(Conversion_Base):
                                     if num != 0:
                                         val_str = f"{num:.2f}"
                                 except ValueError:
+                                    import traceback; traceback.print_exc()
                                     pass
 
                         records.append(
@@ -309,6 +308,7 @@ class D_BO_000000484_01(Conversion_Base):
                                     if num != 0:
                                         val_str = f"{num:.2f}"
                                 except ValueError:
+                                    import traceback; traceback.print_exc()
                                     pass
 
                         records.append(
@@ -377,3 +377,6 @@ class D_BO_000000484_01(Conversion_Base):
             print(f"Validation error: {error}")
             traceback.print_exc()
             return True
+
+Executor_D_BO_000000484_01 = D_BO_000000484_01
+Robot = D_BO_000000484_01

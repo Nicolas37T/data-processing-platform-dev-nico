@@ -34,9 +34,39 @@ class CNDC(Download_Base):
                 frecuency_tab[0].click()
                 page.wait_for_timeout(3*1000)
 
-                page.wait_for_selector(card_xpath,state='visible')
-                page.wait_for_timeout(5*1000)
-                links = [link for link in page.locator(card_xpath).all() if search_key_words(text=link.inner_text(),key_words=key_words)]                
+                # Select category matching key_words if present
+                if key_words:
+                    cat_buttons = page.locator('//button[contains(@class, "est-cat")]').all()
+                    for c in cat_buttons:
+                        cat_txt = c.inner_text().strip()
+                        if search_key_words(text=cat_txt, key_words=key_words):
+                            print(f"[CNDC] Selecting category: {cat_txt}")
+                            c.click()
+                            page.wait_for_timeout(2*1000)
+                            break
+
+                # Apply date filter 'desde' to query records newer than updated_to
+                if updated_to:
+                    try:
+                        dt_str = updated_to.strftime('%Y-%m-%d') if hasattr(updated_to, 'strftime') else format_date(updated_to).strftime('%Y-%m-%d')
+                        desde = page.locator('#est-filtro-desde')
+                        if desde.count() > 0:
+                            print(f"[CNDC] Setting date filter desde: {dt_str}")
+                            desde.fill(dt_str)
+                            page.keyboard.press('Enter')
+                            page.wait_for_timeout(3*1000)
+                    except Exception as err:
+                        print(f"[CNDC] Warning applying date filter: {err}")
+
+                try:
+                    page.wait_for_selector(card_xpath, state='visible', timeout=10000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(2*1000)
+                cards = page.locator(card_xpath).all()
+                links = [link for link in cards if not key_words or search_key_words(text=link.inner_text(), key_words=key_words)]
+                if not links and cards:
+                    links = cards
                 print(f"[LINKS] Found {len(links)} report links on this page")
 
                 files_link_searched = []
