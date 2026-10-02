@@ -27,7 +27,7 @@ doc_md = """## 📥 DAG Descarga: D_BO_000000043
 | **📝 Nombre Dataset** | Daily Prices Of Cocoa Beans |
 | **📁 Archivo** | icco daily prices of Cocoa Beans |
 | **⚙️ Tipo Descarga** | Tipo II (direct_download_template) |
-| **📅 Última Descarga** | **2026-08-06** |
+| **📅 Última Descarga** | **2026-10-01** |
 | **⏱️ Frecuencia** | `42 8 * * 5` |
 | **🧭 Ruta Web** | Inicio: Statics>>Cocoa Daily Prices |
 | **🌐 Portal Web** | [Abrir portal ↗](https://www.icco.org/statistics/) |
@@ -36,7 +36,7 @@ doc_md = """## 📥 DAG Descarga: D_BO_000000043
 dag = DAG('D_BO_000000043',
         schedule= '42 8 * * 5',
         default_args=default_args,        
-        tags= ['FDTA-Valles', 'SPIM_13001_IDPCB', 'Download', 'Diario', '2026-08-06'],
+        tags= ['FDTA-Valles', 'SPIM_13001_IDPCB', 'Download', 'Diario', '2026-10-01'],
         doc_md=doc_md,
         catchup=False )
 

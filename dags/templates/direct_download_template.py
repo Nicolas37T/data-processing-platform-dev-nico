@@ -288,6 +288,11 @@ def create_dag(dag, connection_id, id_dag=None):
         logger.info(f"Max update date item: {max_date_item.get('updated_to')}")
         ti.xcom_push(key='file_update', value=max_date_item)
         ti.xcom_push(key='files_dicts', value=files_dicts)
+        try:
+            from templates.dag_metadata_updater import update_dag_tag_and_doc
+            update_dag_tag_and_doc(id_dag, 'download', max_date_item.get('updated_to'))
+        except Exception as e:
+            logger.warning(f"Warning: Could not update DAG metadata tag: {e}")
 
         elapsed = time.time() - start_time
         logger.info("=" * 80)
