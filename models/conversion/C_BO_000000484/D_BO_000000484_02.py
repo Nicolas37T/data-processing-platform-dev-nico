@@ -144,13 +144,15 @@ class D_BO_000000484_02(Conversion_Base):
                     term = (
                         str(row_term.iloc[c]).strip()
                         if pd.notna(row_term.iloc[c])
-                        else "-"
+                        else None
                     )
-                    if term.endswith(".0"):
+                    if term and term.endswith(".0"):
                         term = term[:-2]
                     lower_prod = prod.lower()
                     if "caja" in lower_prod or "promedio" in lower_prod:
-                        term = "-"
+                        term = None
+                    if term and str(term).strip() in ("-", ""):
+                        term = None
                     col_mapping.append((c, cur, prod, term))
 
                 current_nv1 = None
@@ -273,10 +275,15 @@ class D_BO_000000484_02(Conversion_Base):
                 for c in range(1, len(table_data[0])):
                     cur = str(p_cur.iloc[c]).strip()
                     prod = re.sub(r"\s+", " ", str(p_prod.iloc[c])).strip()
-                    term = str(p_term.iloc[c] or "").strip() or "-"
+                    raw_term = str(p_term.iloc[c] or "").strip()
+                    term = raw_term if raw_term and raw_term not in ("-", "- - -", "nan") else None
+                    if term and term.endswith(".0"):
+                        term = term[:-2]
                     lower_prod = prod.lower()
                     if "caja" in lower_prod or "promedio" in lower_prod:
-                        term = "-"
+                        term = None
+                    if term and str(term).strip() in ("-", ""):
+                        term = None
                     col_mapping.append((c, cur, prod, term))
 
                 current_nv1 = None
