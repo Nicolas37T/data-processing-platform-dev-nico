@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS "%s"."%s"
 (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   titulo1 text,
+  titulo2 text,
   nv1 text,
   nv2 text,
   fecha date,

@@ -198,7 +198,7 @@ class D_BO_000000462_01(Conversion_Base):
 
             metadata = {
                 "file_name": file_name,
-                "titles": [],
+                "titles": ["Precios Referenciales del Pollo"],
                 "page_number": int(page.page_number),
             }
             return metadata, dataframe

@@ -1,4 +1,4 @@
-"""Migration robot for report D_BO_000000019_01: Consumo de Cemento por Departamento (INE)."""
+"""Migration robot for report D_BO_000000019_01: Bolivia: Consumo de Cemento por Departamento según Año y Mes , (en Toneladas Metricas)."""
 
 import re
 from typing import Tuple
@@ -11,28 +11,40 @@ class D_BO_000000019_01(Migration_Base):
 
     def standard_report(self, dataframe: pd.DataFrame, conversion_factor: int) -> Tuple[dict, pd.DataFrame]:
         """
-        Standardize report dataframe for D_BO_000000019_01.
-
-        Metric: consumo
-        Metric Unit: TM (Toneladas Métricas)
-        Conversion Factor: 1 (valores ya vienen en toneladas métricas completas)
+        Enrich dataframe with clean columns and metric metadata.
+        - metrica: 'volumen'
+        - unidad_metrica: 'Tn'
+        - conversion_factor: 1
         """
-        # Limpieza de nombres de columnas
         dataframe.columns = [re.sub(r"[\t\xa0]+", "", str(c)).strip() for c in dataframe.columns]
 
-        # Limpiar strings en columnas categóricas
         for col in dataframe.columns:
             if col not in ["valor", "fecha"]:
-                dataframe[col] = dataframe[col].astype(str).str.strip()
+                dataframe[col] = dataframe[col].apply(
+                    lambda x: str(x).strip() if pd.notna(x) and str(x).strip().lower() not in ["none", "nan", ""] else None
+                )
 
-        # Insertar metrica y unidad_metrica inmediatamente antes de 'valor'
         idx_valor = dataframe.columns.get_loc("valor")
-        dataframe.insert(idx_valor, column="metrica", value="consumo")
-        dataframe.insert(idx_valor + 1, column="unidad_metrica", value="TM")
+        dataframe.insert(idx_valor, column="metrica", value="volumen")
+        dataframe.insert(idx_valor + 1, column="unidad_metrica", value="Tn")
 
-        factor = 1
+        dataframe["valor"] = pd.to_numeric(
+            dataframe["valor"].astype(str).str.replace(",", ".", regex=False),
+            errors="coerce"
+        )
 
-        return ({"conversion_factor": factor}, dataframe)
+        try:
+            factor_val = int(conversion_factor) if conversion_factor is not None else 1
+        except (ValueError, TypeError):
+            factor_val = 1
+
+        if factor_val <= 1 and 1 > 1:
+            factor_val = 1
+
+        if factor_val > 1 and "volumen" == "moneda":
+            dataframe["valor"] = dataframe["valor"] * factor_val
+
+        return ({"conversion_factor": factor_val}, dataframe)
 
 
 Robot = D_BO_000000019_01

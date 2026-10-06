@@ -1,4 +1,4 @@
-"""Migration robot for report D_BO_000000462_02: Precios de Insumos Avícolas (ADA SCZ)."""
+"""Migration robot for report D_BO_000000462_02: Precios Referenciales de Insumos."""
 
 import re
 from typing import Tuple
@@ -11,37 +11,40 @@ class D_BO_000000462_02(Migration_Base):
 
     def standard_report(self, dataframe: pd.DataFrame, conversion_factor: int) -> Tuple[dict, pd.DataFrame]:
         """
-        Enrich dataframe with metric and metric unit metadata based on nv4.
-        nv4 contains currency/unit (e.g. 'Bs./Kg.', '$us./Tn.', 'Bs./Tn.')
-        - conversion_factor = 1
+        Enrich dataframe with clean columns and metric metadata.
+        - metrica: 'precio'
+        - unidad_metrica: 'BOB/qq'
+        - conversion_factor: 1
         """
-        # Clean column names
         dataframe.columns = [re.sub(r"[\t\xa0]+", "", str(c)).strip() for c in dataframe.columns]
 
-        # Standardize strings in hierarchy columns
-        for col in ["titulo1", "nv1", "nv2", "nv3", "nv4"]:
-            if col in dataframe.columns:
-                dataframe[col] = dataframe[col].astype(str).str.strip()
+        for col in dataframe.columns:
+            if col not in ["valor", "fecha"]:
+                dataframe[col] = dataframe[col].apply(
+                    lambda x: str(x).strip() if pd.notna(x) and str(x).strip().lower() not in ["none", "nan", ""] else None
+                )
 
-        def get_metric(val: str) -> str:
-            return "moneda"
-
-        def get_unit(val: str) -> str:
-            v = str(val).lower()
-            if "$us" in v or "usd" in v:
-                return "USD/Tn" if "tn" in v else "USD"
-            elif "bs" in v or "bob" in v:
-                return "BOB/Tn" if "tn" in v else ("BOB/kg" if "kg" in v else "BOB")
-            return "BOB"
-
-        # Insert 'metrica' and 'unidad_metrica' right before 'valor'
         idx_valor = dataframe.columns.get_loc("valor")
-        dataframe.insert(idx_valor, column="metrica", value=dataframe["nv4"].apply(get_metric))
-        dataframe.insert(idx_valor + 1, column="unidad_metrica", value=dataframe["nv4"].apply(get_unit))
+        dataframe.insert(idx_valor, column="metrica", value="precio")
+        dataframe.insert(idx_valor + 1, column="unidad_metrica", value="BOB/qq")
 
-        factor = 1
+        dataframe["valor"] = pd.to_numeric(
+            dataframe["valor"].astype(str).str.replace(",", ".", regex=False),
+            errors="coerce"
+        )
 
-        return ({"conversion_factor": factor}, dataframe)
+        try:
+            factor_val = int(conversion_factor) if conversion_factor is not None else 1
+        except (ValueError, TypeError):
+            factor_val = 1
+
+        if factor_val <= 1 and 1 > 1:
+            factor_val = 1
+
+        if factor_val > 1 and "precio" == "moneda":
+            dataframe["valor"] = dataframe["valor"] * factor_val
+
+        return ({"conversion_factor": factor_val}, dataframe)
 
 
 Robot = D_BO_000000462_02
