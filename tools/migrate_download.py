@@ -106,16 +106,92 @@ def refactor_download_code(raw_code: str, code: str, download_type: str) -> str:
     """Transforma el código fuente V1 al estándar V2."""
     code_content = raw_code
 
-    # 1. Asegurar herencia de Download_Base
-    if "from models.download.Download_Base import Download_Base" not in code_content:
-        code_content = (
-            "from models.download.Download_Base import Download_Base\n"
-            + code_content
-        )
-
-    # 2. Limpiar rutas obsoletas de sys.path
+    # 1. Limpiar rutas obsoletas de sys.path
     code_content = re.sub(r"sys\.path\.append\(['\"][^'\"]*data-processing-platform[^'\"]*['\"]\)\s*", "", code_content)
     code_content = re.sub(r"sys\.path\.append\(['\"][^'\"]*platform_project[^'\"]*['\"]\)\s*", "", code_content)
+
+    # 2. Corregir imports de download_tools hacia los paths oficiales
+    code_content = re.sub(r"\bfrom\s+(?:models\.)?(?:download\.)?tools\.download_tools\b", "from models.download.tools.download_tools", code_content)
+    code_content = re.sub(r"\bfrom\s+download_tools\b", "from models.download.tools.download_tools", code_content)
+    code_content = re.sub(r"\bimport\s+download_tools\b", "import models.download.tools.download_tools as download_tools", code_content)
+
+    # 3. Separar header y limpiar cualquier import previo o try/except obsoleto de Download_Base
+    class_match = re.search(r"^[ \t]*class\s+[A-Za-z0-9_]+", code_content, flags=re.MULTILINE)
+    if class_match:
+        header = code_content[:class_match.start()]
+        body = code_content[class_match.start():]
+    else:
+        header = code_content
+        body = ""
+
+    lines = header.splitlines()
+    new_header_lines = []
+    i = 0
+    n = len(lines)
+    base_name = "Download_Base"
+    official_import = "from models.download.Download_Base import Download_Base"
+
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+
+        if stripped == "try:":
+            try_lines = []
+            except_lines = []
+            in_except = False
+            j = i + 1
+
+            while j < n:
+                cur_line = lines[j]
+                cur_stripped = cur_line.strip()
+
+                if cur_stripped and not cur_line.startswith((" ", "\t")):
+                    if cur_stripped.startswith("except"):
+                        in_except = True
+                        except_lines.append(cur_line)
+                        j += 1
+                        continue
+                    else:
+                        break
+
+                if in_except:
+                    except_lines.append(cur_line)
+                else:
+                    try_lines.append(cur_line)
+                j += 1
+
+            all_block_text = "\n".join(try_lines + except_lines)
+
+            if base_name.lower() in all_block_text.lower():
+                i = j
+                continue
+
+            if "download_tools" in all_block_text:
+                for tl in try_lines:
+                    if tl.strip().startswith(("from ", "import ")):
+                        new_header_lines.append(tl.strip())
+                i = j
+                continue
+
+            new_header_lines.append(line)
+            new_header_lines.extend(try_lines)
+            new_header_lines.extend(except_lines)
+            i = j
+            continue
+
+        if (stripped.startswith("from ") or stripped.startswith("import ")) and base_name.lower() in stripped.lower():
+            i += 1
+            continue
+
+        if re.match(rf"^{base_name}\s*=\s*object\b", stripped, re.IGNORECASE):
+            i += 1
+            continue
+
+        new_header_lines.append(line)
+        i += 1
+
+    cleaned_header = "\n".join(new_header_lines).strip()
+    code_content = f"{official_import}\n{cleaned_header}\n\n{body}"
 
     # 3. Renombrar clase principal a <CODE>, preservando clase base si no es Executor
     def _replace_class_parent(m):

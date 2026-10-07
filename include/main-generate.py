@@ -6,8 +6,16 @@ import fileinput
 import pandas as pd
 from typing import List
 from sqlalchemy import create_engine
-from console import info_print, error_print, success_print
 try:
+    from console import info_print, error_print, success_print
+except ImportError:
+    try:
+        from include.console import info_print, error_print, success_print
+    except ImportError:
+        def info_print(m): print(f"[INFO] {m}")
+        def error_print(m): print(f"[ERROR] {m}")
+        def success_print(m): print(f"[SUCCESS] {m}")
+
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:

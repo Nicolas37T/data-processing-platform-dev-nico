@@ -140,11 +140,10 @@ def locate_conversion_sources(
 def fetch_report_metadata(report_code: str, engine) -> Optional[Dict]:
     """Consulta la configuración del reporte en la tabla 'report' de platform_db."""
     query = f"""
-        SELECT id_report, code, name, page_number, decimal_separator, 
-               key_words, path, storage_table, replacement_table,
-               converted_report_path, is_active
+        SELECT *, "isActive" AS is_active
         FROM report 
         WHERE code = '{report_code}';
+
     """
     try:
         df = pd.read_sql_query(query, con=engine)
@@ -172,42 +171,137 @@ def refactor_conversion_code(raw_code: str, report_code: str) -> str:
     code_content = re.sub(r"\bfrom\s+download_tools\b", "from models.download.tools.download_tools", code_content)
     code_content = re.sub(r"\bimport\s+download_tools\b", "import models.download.tools.download_tools as download_tools", code_content)
 
-    # 3. Asegurar import requerido de Conversion_Base
-    if "from models.conversion.Conversion_Base import Conversion_Base" not in code_content:
-        code_content = (
-            "from models.conversion.Conversion_Base import Conversion_Base\n"
-            + code_content
-        )
+    # 3. Separar header (antes de la clase principal) del cuerpo
+    class_match = re.search(r"^[ \t]*class\s+[A-Za-z0-9_]+", code_content, flags=re.MULTILINE)
+    if class_match:
+        header = code_content[:class_match.start()]
+        body = code_content[class_match.start():]
+    else:
+        header = code_content
+        body = ""
 
-    # 4. Renombrar clase principal a <REPORT_CODE>(Conversion_Base)
-    # Soporta class Robot:, class Robot():, class Robot(Conversion_Base):, class Executor_...:, etc.
+    lines = header.splitlines()
+    new_header_lines = []
+    i = 0
+    n = len(lines)
+    base_name = "Conversion_Base"
+    official_import = "from models.conversion.Conversion_Base import Conversion_Base"
+
+    while i < n:
+        line = lines[i]
+        stripped = line.strip()
+
+        # Si encontramos un bloque 'try:' en el header
+        if stripped == "try:":
+            try_lines = []
+            except_lines = []
+            in_except = False
+            j = i + 1
+
+            while j < n:
+                cur_line = lines[j]
+                cur_stripped = cur_line.strip()
+
+                if cur_stripped and not cur_line.startswith((" ", "\t")):
+                    if cur_stripped.startswith("except"):
+                        in_except = True
+                        except_lines.append(cur_line)
+                        j += 1
+                        continue
+                    else:
+                        break
+
+                if in_except:
+                    except_lines.append(cur_line)
+                else:
+                    try_lines.append(cur_line)
+                j += 1
+
+            all_block_text = "\n".join(try_lines + except_lines)
+
+            # Si envuelve Conversion_Base: descartar todo el bloque obsoleto
+            if base_name.lower() in all_block_text.lower():
+                i = j
+                continue
+
+            # Si envuelve conversion_tools / download_tools: extraer solo los imports limpios
+            if "conversion_tools" in all_block_text or "download_tools" in all_block_text:
+                for tl in try_lines:
+                    if tl.strip().startswith(("from ", "import ")):
+                        new_header_lines.append(tl.strip())
+                i = j
+                continue
+
+            # Si es otro bloque try:, conservarlo
+            new_header_lines.append(line)
+            new_header_lines.extend(try_lines)
+            new_header_lines.extend(except_lines)
+            i = j
+            continue
+
+        # Eliminar imports sueltos de Conversion_Base
+        if (stripped.startswith("from ") or stripped.startswith("import ")) and base_name.lower() in stripped.lower():
+            i += 1
+            continue
+
+        # Eliminar asignaciones Conversion_Base = object
+        if re.match(rf"^{base_name}\s*=\s*object\b", stripped, re.IGNORECASE):
+            i += 1
+            continue
+
+        new_header_lines.append(line)
+        i += 1
+
+    cleaned_header = "\n".join(new_header_lines).strip()
+
+    # 4. Asegurar exactamente un import oficial limpio al inicio
+    code_content = f"{official_import}\n{cleaned_header}\n\n{body}"
+
+    # 5. Renombrar clase principal a <REPORT_CODE>(Conversion_Base)
     class_pattern = r"class\s+([A-Za-z0-9_]+)(?:\s*\([^)]*\))?\s*:"
-    matches = list(re.finditer(class_pattern, code_content))
-    for m in matches:
+    m = re.search(class_pattern, code_content)
+    if m:
         cls_name = m.group(1)
         if cls_name != report_code:
             full_match = m.group(0)
-            code_content = code_content.replace(full_match, f"class {report_code}(Conversion_Base):", 1)
-            break
+            code_content = code_content.replace(full_match, f"class {report_code}({base_name}):", 1)
 
-    # 5. Asegurar traceback.print_exc() en bloques except si falta
+    # 6. Limpiar traceback.print_exc() inyectados en bloques de control de flujo (ej. except ValueError)
+    lines = code_content.splitlines()
+    cleaned_lines = []
+    i = 0
+    n = len(lines)
+    while i < n:
+        line = lines[i]
+        cleaned_lines.append(line)
+        if re.search(r"^\s*except\s+(?:\([^)]*\bValueError\b[^)]*\)|ValueError\b)", line):
+            if i + 1 < n and "traceback.print_exc()" in lines[i + 1]:
+                i += 1
+        i += 1
+    code_content = "\n".join(cleaned_lines)
+
+    # 7. Asegurar traceback.print_exc() SOLO en bloques de excepciones generales (Exception)
     lines = code_content.splitlines()
     new_lines = []
     for i, line in enumerate(lines):
         new_lines.append(line)
-        if re.search(r"^\s*except(\s+.*)?:", line):
+        if re.search(r"^\s*except\s+(?:Exception\b|as\b\s*\w+)", line, re.IGNORECASE):
             next_block = "\n".join(lines[i + 1 : i + 4])
             if "print_exc" not in next_block:
                 indent = re.match(r"^(\s*)", line).group(1) + "    "
                 new_lines.append(f"{indent}import traceback; traceback.print_exc()")
     code_content = "\n".join(new_lines)
 
-    # 6. Agregar alias al pie de compatibilidad
+    # 8. Limpiar cualquier alias huérfano previo para evitar NameError
+    code_content = re.sub(r'^[ \t]*Robot\s*=\s*[A-Za-z0-9_]+[^\n]*\n?', '', code_content, flags=re.MULTILINE)
+    code_content = re.sub(r'^[ \t]*Executor_[A-Za-z0-9_]+\s*=\s*[A-Za-z0-9_]+[^\n]*\n?', '', code_content, flags=re.MULTILINE)
+
+    # 9. Agregar alias oficiales limpios al pie
     alias_footer = f"\n\nExecutor_{report_code} = {report_code}\nRobot = {report_code}\n"
-    if f"Executor_{report_code} = {report_code}" not in code_content:
-        code_content += alias_footer
+    code_content = code_content.rstrip() + alias_footer
 
     return code_content
+
 
 
 def setup_columns_to_review(sqlite_path: str, report_code: str) -> bool:
