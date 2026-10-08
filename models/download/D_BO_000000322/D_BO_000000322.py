@@ -44,7 +44,7 @@ if __name__ == "__main__":
 #     files = [{'download_url': 'https://www.bcb.gob.bo/webdocs/publicacionesbcb/2024/04/10/01.01P.xlsx', 'tmp_path': r"C:\Users\Kevin Padilla\Downloads\BDR_EstadosFinancierosDesagregados (2).zip"}]
 #     y = robot.compare_files(files_paths=files,updated_to="2023-01-21")
 #     print(y)
-# 
+#
 
 Executor_D_BO_000000322 = D_BO_000000322
 Robot = D_BO_000000322
