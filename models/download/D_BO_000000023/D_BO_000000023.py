@@ -1,9 +1,8 @@
+from models.download.Download_Base import Download_Base
 import sys,re
-sys.path.append("..")
 from playwright.sync_api import sync_playwright
 import pandas as pd
 from models.download.tools.download_tools import format_date, delete_hidden_sheets,last_day_month,get_date_method_1, search_key_words
-from models.download.Download_Base import Download_Base
 
 class D_BO_000000023(Download_Base):
 

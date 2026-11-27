@@ -25,6 +25,7 @@ dag = DAG(dag-id,
         default_args=default_args,        
         tags= [tagsToReplace],
         doc_md=doc_md,
-        catchup=False )
+        catchup=False,
+        max_active_runs=1 )
 
 create_dag(dag, connection_id=connection-id,id_dag=dag-id)#ALL=True)

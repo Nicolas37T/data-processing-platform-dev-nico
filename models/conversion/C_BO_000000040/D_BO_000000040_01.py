@@ -213,17 +213,30 @@ class D_BO_000000040_01(Conversion_Base):
                             "fecha": cut_date, "valor": current_trn
                         })
 
-                # Subtotal Line: e.g. 1) 245.696 10,4500 9,6800 10,5800 245.696
-                elif is_subtotal or (len(parts) >= 3 and not parts[1].isalpha()):
+                # Subtotal Line: e.g. 1) 245.696 10,4500 9,6800 10,5800 245.696 or 1) 55.247 0,0000
+                elif is_subtotal or (len(parts) >= 2 and not parts[1].isalpha()):
                     emisor = "BCB"
                     dem_tot = parts[0]
                     if len(parts) >= 5:
                         tr_tot, td_tot, tea_tot = parts[1], parts[2], parts[3]
                         adj_tot = parts[4]
-                    else:
+                    elif len(parts) == 4:
+                        tr_tot, td_tot, tea_tot = parts[1], parts[2], None
+                        adj_tot = parts[3]
+                    elif len(parts) == 3:
                         tr_tot = parts[1]
                         td_tot, tea_tot = None, None
                         adj_tot = parts[2]
+                    elif len(parts) == 2:
+                        # e.g., when no bids are adjudicated: "1) 55.247 0,0000"
+                        tr_tot = parts[1]
+                        td_tot, tea_tot = None, None
+                        adj_tot = "0"
+                    else:
+                        dem_tot = parts[0] if parts else "0"
+                        tr_tot = "0,0000"
+                        td_tot, tea_tot = None, None
+                        adj_tot = "0"
 
                     records.append({
                         "nv1": moneda, "nv2": current_serie, "nv3": current_plazo, "nv4": semana_anio,

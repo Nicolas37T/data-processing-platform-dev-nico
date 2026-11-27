@@ -1,8 +1,7 @@
+from models.download.Download_Base import Download_Base
 import sys, traceback, re
-sys.path.append("..")
 from playwright.sync_api import sync_playwright
 from models.download.tools.download_tools import format_date, month_abr_to_number, month_to_number, text_extract
-from models.download.Download_Base import Download_Base
 
 class D_BO_000000042(Download_Base):
 

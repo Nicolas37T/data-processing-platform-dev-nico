@@ -1,9 +1,8 @@
+from models.download.Download_Base import Download_Base
 import sys, traceback, os,time, shutil,re
-sys.path.append("..")
 from playwright.sync_api import sync_playwright
 import pandas as pd
 from models.download.tools.download_tools import format_date, month_abr_to_number, month_to_number
-from models.download.Download_Base import Download_Base
 
 class D_BO_000000271(Download_Base):
 
@@ -37,25 +36,31 @@ class D_BO_000000271(Download_Base):
             try:
                 # Launch browser and navigate to main URL
                 print(f"Launching browser and navigating to {main_url} ...")
-                browser = pl.chromium.launch(headless=False)
-                context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36')
+                browser = pl.chromium.launch(headless=True)
+                context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
                 context.set_default_timeout(1800000)
                 page = context.new_page()
                 page.goto(main_url, wait_until='load')
                 
                 page.wait_for_timeout(3*1000)
                 cookies_button = page.locator('#onetrust-accept-btn-handler')
-                if cookies_button:
+                if cookies_button.count() > 0 and cookies_button.is_visible():
                     cookies_button.click()
-                page.wait_for_selector('//button[@aria-label="Mostrar la Clasificación Mundial completa"]',state="visible")
+                    page.wait_for_timeout(1000)
                 
-                # Extract link for "precios mercado"
-                show_more_data_button = page.query_selector('//button[@aria-label="Mostrar la Clasificación Mundial completa"]')
+                page.wait_for_selector('//button[@aria-label="Mostrar la Clasificación Mundial completa"]', state="visible", timeout=30000)
+                show_more_data_button = page.locator('//button[@aria-label="Mostrar la Clasificación Mundial completa"]')
                 show_more_data_button.click()
-                time.sleep(5)
+                time.sleep(3)
 
                 # Extract date of the last data entry
-                date = re.search(re_date, page.query_selector('//div[@class="ranking-update-dates_dateItem__t9Z__ ranking-update-dates_justUpdated__dtDaJ"]').inner_text(), re.IGNORECASE).group(1,2,3)
+                date_item = page.locator('div[class*="dateItem"]:has-text("actualizaci")').first
+                if date_item.count() == 0:
+                    date_item = page.locator('div[class*="dateItem"]').first
+                date_match = re.search(re_date, date_item.inner_text(), re.IGNORECASE)
+                if not date_match:
+                    raise ValueError(f"Could not extract date from element text: {date_item.inner_text()}")
+                date = date_match.group(1, 2, 3)
                 year = date[2]
                 month = month_to_number(date[1]) if month_to_number(date[1]) else month_abr_to_number(date[1])
                 day = date[0]

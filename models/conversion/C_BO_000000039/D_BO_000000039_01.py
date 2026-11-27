@@ -213,17 +213,30 @@ class D_BO_000000039_01(Conversion_Base):
                             "fecha": cut_date, "valor": current_trn
                         })
 
-                # Subtotal Line: e.g. 1) 24.092 9,1000 8,9000 9,4100 24.092
-                elif is_subtotal or (len(parts) >= 3 and not parts[1].isalpha()):
+                # Subtotal Line: e.g. 1) 24.092 9,1000 8,9000 9,4100 24.092 or 1) 20.000 0,0000
+                elif is_subtotal or (len(parts) >= 2 and re.match(r"^[\d\.,]+$", parts[0]) and not parts[1].isalpha()):
                     emisor = "BCB"
                     dem_tot = parts[0]
+                    td_tot, tea_tot = None, None
                     if len(parts) >= 5:
                         tr_tot, td_tot, tea_tot = parts[1], parts[2], parts[3]
                         adj_tot = parts[4]
-                    else:
+                    elif len(parts) == 4:
+                        tr_tot, td_tot = parts[1], parts[2]
+                        adj_tot = parts[3]
+                    elif len(parts) == 3:
                         tr_tot = parts[1]
-                        td_tot, tea_tot = None, None
                         adj_tot = parts[2]
+                    elif len(parts) == 2:
+                        if "," in parts[1]:
+                            tr_tot = parts[1]
+                            adj_tot = "0"
+                        else:
+                            tr_tot = None
+                            adj_tot = parts[1]
+                    else:
+                        tr_tot = None
+                        adj_tot = "0"
 
                     records.append({
                         "nv1": moneda, "nv2": current_serie, "nv3": current_plazo, "nv4": semana_anio,
@@ -235,11 +248,12 @@ class D_BO_000000039_01(Conversion_Base):
                         "nv5": emisor, "nv6": "TOTAL", "nv7": "TOTAL", "nv8": "Monto Demandado",
                         "fecha": cut_date, "valor": dem_tot
                     })
-                    records.append({
-                        "nv1": moneda, "nv2": current_serie, "nv3": current_plazo, "nv4": semana_anio,
-                        "nv5": emisor, "nv6": "TOTAL", "nv7": "TOTAL", "nv8": "T.R. %",
-                        "fecha": cut_date, "valor": tr_tot
-                    })
+                    if tr_tot is not None:
+                        records.append({
+                            "nv1": moneda, "nv2": current_serie, "nv3": current_plazo, "nv4": semana_anio,
+                            "nv5": emisor, "nv6": "TOTAL", "nv7": "TOTAL", "nv8": "T.R. %",
+                            "fecha": cut_date, "valor": tr_tot
+                        })
                     if td_tot:
                         records.append({
                             "nv1": moneda, "nv2": current_serie, "nv3": current_plazo, "nv4": semana_anio,

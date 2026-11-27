@@ -1,113 +1,147 @@
 from models.download.Download_Base import Download_Base
-import sys, re, os, urllib
+import os
+import re
 import urllib.parse
-sys.path.append("..")
+from datetime import datetime
 import pandas as pd
-from models.download.tools.download_tools import format_date, month_abr_to_number,month_to_number,last_day_month, delete_hidden_sheets
-from models.download.BCB_Boletin_Mensual import BCB_Boletin_Mensual
+import requests
+from bs4 import BeautifulSoup
+import urllib3
 
-class D_BO_000000125(BCB_Boletin_Mensual):
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def get_file_url(self, main_url, updated_to, key_words = "privado sectores bancos",format='%Y-%m-%d'):
+from models.download.tools.download_tools import (
+    format_date,
+    month_abr_to_number,
+    month_to_number,
+    last_day_month,
+    delete_hidden_sheets,
+)
+
+
+class D_BO_000000125(Download_Base):
+    """
+    Download robot for D_BO_000000125:
+    Financiamiento Concedido por el Sistema bancario al sector privado - por sectores económicos y bancos (BCB)
+    """
+
+    def get_file_url(
+        self,
+        main_url: str,
+        updated_to: str,
+        key_words: str = "privado sectores bancos",
+        format: str = "%Y-%m-%d",
+    ) -> list:
         """
-        Extracts download URLs for files dated after update_to date.
-    
-        Parameters:
-            main_url (str): The URL of the main page.
-            updated_to (str): The latest date for which the database contains records.
-            key_words (str, optional): Keywords to search for he file.
-            format (str, optional): Date format to parse 'updated_to'. Defaults to '%Y-%m-%d'.
-    
-        Returns:
-            list: A list of download URLs for files that meet the criteria.
+        Extracts download URLs for files matching key_words from main_url.
         """
-        # Call the superclass method to get a list of file URLs from the main page           
-        files_urls = super().get_file_url_main(main_url=main_url,updated_to=updated_to, key_words=key_words, exact=False)
+        print(f"Scraping file URLs from: {main_url}")
+        files_urls = []
+        kw_list = [k.strip().lower() for k in key_words.split() if k.strip()] if key_words else ["privado", "sectores", "bancos"]
+
+        target_url = main_url if "sector-monetario" in main_url else "https://www.bcb.gob.bo/?q=content/sector-monetario"
+        base_domain = "https://www.bcb.gob.bo"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        }
+
+        try:
+            response = requests.get(target_url, headers=headers, verify=False, timeout=30)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                for a_tag in soup.find_all("a", href=True):
+                    href = a_tag["href"].strip()
+                    text = a_tag.get_text(strip=True).lower()
+                    href_lower = urllib.parse.unquote(href).lower()
+
+                    is_target_file = (
+                        "2. financiamiento por destino del crédito por bancos.xlsx" in href_lower
+                        or ("destino del crédito por bancos" in text and href_lower.endswith(".xlsx"))
+                        or ("credito por bancos" in href_lower and href_lower.endswith(".xlsx"))
+                        or ("crédito por bancos" in href_lower and href_lower.endswith(".xlsx"))
+                        or (all(kw in text or kw in href_lower for kw in kw_list) and (".xlsx" in href_lower or ".xls" in href_lower))
+                    )
+
+                    if is_target_file and "no bancaria" not in href_lower and "no bancaria" not in text:
+                        clean_href = href.split("#")[0]
+                        full_url = urllib.parse.urljoin(base_domain, clean_href)
+                        if full_url not in files_urls:
+                            files_urls.append(full_url)
+                            print(f"Found download URL: {full_url}")
+        except Exception as e:
+            print(f"Requests scraping error: {e}")
+
         return files_urls
-    
-    def compare_files(self, files_paths, updated_to, format='%Y-%m-%d'):
+
+    def compare_files(self, files_paths: list, updated_to: str, format: str = "%Y-%m-%d"):
         """
         Extract the date from a list of files to compare and filter which are more recent than the updated_to date.
-
-        Parameters:
-            files_paths (list): List of dictionaries containing information about files.
-            updated_to (str): The latest date for which the database contains records.
-            format (str, optional): Date format to parse 'updated_to'. Defaults to '%Y-%m-%d'.
-
-        Returns:
-            list or bool: A list of dictionaries with information about files that meet the criteria of being more recent than 'updated_to'. Returns False if no more recent files are found.
         """
         print("Comparing files...")
-        # List to store file dictionaries
         files_dicts = []
-
-        # Convert updated_to string to datetime object
         updated_to = format_date(updated_to)
         help_dict = {}
-        # Iterate over each file path
+
+        re_date = r"(\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b).*(\b\d{4})\s*[(]?p?[)]?"
+
         for file in files_paths:
             parsed_url = urllib.parse.urlparse(file['download_url'])
             root_url = os.path.dirname(parsed_url.path)
             file_name = os.path.basename(parsed_url.path)
-            extension = os.path.splitext(file_name)[1].replace(".","")
-            
+            extension = os.path.splitext(file_name)[1].replace(".", "").lower()
 
-            re_date = r"(\b(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\b).*(\b\d{4})\s*[(]?p?[)]?"
             print(f"Comparing file: {file['tmp_path']}")
 
             if 'pdf' in extension:
-                help_dict[root_url] = {extension:file}
+                help_dict[root_url] = {extension: file}
                 continue
-                        
+
             delete_hidden_sheets(file=file["tmp_path"])
-            
+
             # Extract date from the file
-            df_new_file = pd.read_excel(file["tmp_path"],header=[1])
+            df_new_file = pd.read_excel(file["tmp_path"], header=[1])
             for column in df_new_file.columns:
                 if df_new_file[column].isna().all():
                     df_new_file.drop(columns=[column], inplace=True)
-            
+
             dataframe_to_look = df_new_file.iloc[:10]
             matches = []
             for column in dataframe_to_look.columns:
                 for index, value in dataframe_to_look[column].items():
-                    # Convert the value to lowercase and strip whitespace
                     value_str = str(value).strip().lower()
-                    # Search for matches of the date pattern in the value string    
-                    match_value = re.search(re_date,value_str)
-                    if match_value :
+                    match_value = re.search(re_date, value_str)
+                    if match_value:
                         matches.append(match_value)
-            # Filter out None matches
+
             matches = [match for match in matches if match]
-            
+            if not matches:
+                print("No date match found in the first rows of the file.")
+                continue
+
             months = [match.group(1) for match in matches if match.group(1)]
             years = [match.group(2) for match in matches if match.group(2)]
-            
+
             year = int(years[-1])
             month = months[-1]
             month = month_to_number(month) if month_to_number(month) else month_abr_to_number(month)
-            day = last_day_month(year=year,month=month)            
-            
+            day = last_day_month(year=year, month=month)
+
             date_formated = format_date(f"{year}-{month}-{day}")
-            
-            # Check if the file is newer than the provided date
-            if date_formated>updated_to:
-                # Format the update date
+
+            if date_formated > updated_to:
                 update_to_formatted = date_formated.strftime(format)
                 print(f"File date: {update_to_formatted}. Adding to filtered files.")
                 file["updated_to"] = update_to_formatted
                 files_dicts.append(file)
-                
-            
             else:
-                print("File does not meet update criteria. Skipping...") 
+                print(f"File date: {date_formated.strftime(format)} <= {updated_to.strftime(format)}. Skipping...")
 
-        # Check if any files were found after the updated date
         if not len(files_dicts):
             print(f"There are NO files after {updated_to.strftime(format)}")
             return False
+
         files_dicts_with_pdfs = []
-        
         for file in files_dicts:
             parsed_url = urllib.parse.urlparse(file['download_url'])
             root_url = os.path.dirname(parsed_url.path)
@@ -116,17 +150,9 @@ class D_BO_000000125(BCB_Boletin_Mensual):
                 pdf_file["updated_to"] = file["updated_to"]
                 files_dicts_with_pdfs.append(pdf_file)
             files_dicts_with_pdfs.append(file)
-        print(len(files_dicts_with_pdfs))
+
         return files_dicts_with_pdfs
-    
-# if __name__ == "__main__":
-#     robot = D_BO_000000125()
-#     # x = robot.get_file_url(main_url="https://www.bcb.gob.bo/?q=pub_boletin-estadistico",updated_to="2023-10-21")
-#     # print(len(x))
-#     # print(x)
-#     files = [{'download_url': 'https://www.bcb.gob.bo/webdocs/publicacionesbcb/2024/04/10/01.01P.xlsx', 'tmp_path': r"\\10.0.0.9\SPIM\BCB\01-Informacion Estadistica\03-Sector Bancario y Financiero\03-Financiamiento concedido por\03-Sistema Bancario al Sector Privado por Sectores Económicos y Bancos\tmp\2024-05-07_11561103.03.xlsx"}]
-#     y = robot.compare_files(files_paths=files,updated_to="2023-01-21")
-#     print(y)
+
 
 Executor_D_BO_000000125 = D_BO_000000125
 Robot = D_BO_000000125

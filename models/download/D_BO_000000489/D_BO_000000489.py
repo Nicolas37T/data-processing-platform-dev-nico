@@ -1,3 +1,4 @@
+from models.download.Download_Base import Download_Base
 import traceback
 import os
 import shutil
@@ -6,7 +7,6 @@ from playwright.sync_api import sync_playwright
 import pandas as pd
 from datetime import datetime, timedelta
 from models.download.tools.download_tools import format_date
-from models.download.Download_Base import Download_Base
 
 class D_BO_000000489(Download_Base):
 
@@ -133,7 +133,6 @@ class D_BO_000000489(Download_Base):
     # files = [{'download_url': 'https://www.bcb.gob.bo/webdocs/publicacionesbcb/2024/04/10/01.01P.xlsx', 'tmp_path': r"/opt/airflow/models/download/D_BO_000000484/TD_08_08_2024.pdf"}, {'download_url': 'https://www.bcb.gob.bo/webdocs/publicacionesbcb/2024/04/10/01.01P.xlsx', 'tmp_path': r"/opt/airflow/models/download/D_BO_000000484/TD_08_08_2024.xlsx"}]
     # y = robot.compare_files(files_paths=files,updated_to="2024-08-05")
     # print(y)
-
 
 Executor_D_BO_000000489 = D_BO_000000489
 Robot = D_BO_000000489

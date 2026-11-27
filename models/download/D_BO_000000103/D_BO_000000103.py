@@ -1,121 +1,143 @@
 from models.download.Download_Base import Download_Base
-import sys, re, os, urllib
+import os
+import re
 import urllib.parse
-sys.path.append("..")
+import calendar
+import datetime
 import pandas as pd
-from models.download.tools.download_tools import format_date, month_abr_to_number,month_to_number,last_day_month, delete_hidden_sheets
-from models.download.BCB_Boletin_Mensual import BCB_Boletin_Mensual
+import requests
+from bs4 import BeautifulSoup
+import openpyxl
+import urllib3
 
-class D_BO_000000103(BCB_Boletin_Mensual):
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-    def get_file_url(self, main_url, updated_to, key_words = "1.03 origen liquidez",format='%Y-%m-%d'):
+from models.download.tools.download_tools import (
+    format_date,
+    delete_hidden_sheets,
+)
+
+
+class D_BO_000000103(Download_Base):
+    """
+    Download robot for D_BO_000000103:
+    Origen de la liquidez Total (BCB)
+    """
+
+    def get_file_url(
+        self,
+        main_url: str,
+        updated_to: str,
+        key_words: str = "origen liquidez total",
+        format: str = "%Y-%m-%d",
+    ) -> list:
         """
-        Extracts download URLs for files dated after update_to date.
-    
-        Parameters:
-            main_url (str): The URL of the main page.
-            updated_to (str): The latest date for which the database contains records.
-            key_words (str, optional): Keywords to search for he file.
-            format (str, optional): Date format to parse 'updated_to'. Defaults to '%Y-%m-%d'.
-    
-        Returns:
-            list: A list of download URLs for files that meet the criteria.
+        Extracts download URLs for files matching key_words from main_url.
         """
-        # Call the superclass method to get a list of file URLs from the main page          
-        files_urls = super().get_file_url_main(main_url=main_url,updated_to=updated_to, key_words=key_words, exact=False)
+        print(f"Scraping file URLs from: {main_url}")
+        files_urls = []
+        target_url = main_url if "sector-monetario" in main_url else "https://www.bcb.gob.bo/?q=content/sector-monetario"
+        base_domain = "https://www.bcb.gob.bo"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+        }
+
+        try:
+            response = requests.get(target_url, headers=headers, verify=False, timeout=30)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+                for a_tag in soup.find_all("a", href=True):
+                    href = a_tag["href"].strip()
+                    text = a_tag.get_text(strip=True).lower()
+                    href_lower = urllib.parse.unquote(href).lower()
+
+                    is_target_file = (
+                        "4. origen de la liquidez total.xlsx" in href_lower
+                        or ("origen de la liquidez total" in text and href_lower.endswith(".xlsx"))
+                        or ("origen de la liquidez total" in href_lower and href_lower.endswith(".xlsx"))
+                    )
+
+                    if is_target_file and "desagregado" not in href_lower and "desagregado" not in text:
+                        clean_href = href.split("#")[0]
+                        full_url = urllib.parse.urljoin(base_domain, clean_href)
+                        if full_url not in files_urls:
+                            files_urls.append(full_url)
+                            print(f"Found download URL: {full_url}")
+        except Exception as e:
+            print(f"Requests scraping error: {e}")
+
         return files_urls
-    
-    def compare_files(self, files_paths, updated_to, format='%Y-%m-%d'):
+
+    def compare_files(self, files_paths: list, updated_to: str, format: str = "%Y-%m-%d"):
         """
         Extract the date from a list of files to compare and filter which are more recent than the updated_to date.
-
-        Parameters:
-            files_paths (list): List of dictionaries containing information about files.
-            updated_to (str): The latest date for which the database contains records.
-            format (str, optional): Date format to parse 'updated_to'. Defaults to '%Y-%m-%d'.
-
-        Returns:
-            list or bool: A list of dictionaries with information about files that meet the criteria of being more recent than 'updated_to'. Returns False if no more recent files are found.
         """
         print("Comparing files...")
-        # List to store file dictionaries
         files_dicts = []
+        updated_to_dt = format_date(updated_to)
 
-        # Convert updated_to string to datetime object
-        updated_to = format_date(updated_to)
-        help_dict = {}
-        # Iterate over each file path
         for file in files_paths:
-            parsed_url = urllib.parse.urlparse(file['download_url'])
-            root_url = os.path.dirname(parsed_url.path)
-            file_name = os.path.basename(parsed_url.path)
-            extension = os.path.splitext(file_name)[1].replace(".","")
-            
-
-            re_year = r'(\d{4})\s*[(]?p?[)]?'
-            re_month = r"((?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic))"
-            print(f"Comparing file: {file['tmp_path']}")
-
-            if 'pdf' in extension:
-                help_dict[root_url] = {extension:file}
+            tmp_path = file.get("tmp_path")
+            if not tmp_path or not os.path.exists(tmp_path):
                 continue
-                        
-            delete_hidden_sheets(file=file["tmp_path"])
-            
-            # Extract date from the file
-            df_new_file = pd.read_excel(file["tmp_path"],header=[1])
-            for column in df_new_file.columns:
-                if df_new_file[column].isna().all():
-                    df_new_file.drop(columns=[column], inplace=True)
-            
-            sub_set = df_new_file[df_new_file.columns[0]]
-            
-            years = [re.search(re_year, str(line)) for line in sub_set if re.search(re_year, str(line))]
-            months = [re.search(re_month, str(value),re.IGNORECASE) for index,value in enumerate(df_new_file[df_new_file.columns[1]]) if re.search(re_month, str(value),re.IGNORECASE) ]
-            
-            year = int(years[-1].group())
-            month = months[-1].group()
-            month = month_to_number(month) if month_to_number(month) else month_abr_to_number(month)
-            day = last_day_month(year=year,month=month)            
-            
-            date_formated = format_date(f"{year}-{month}-{day}")
-            # Check if the file is newer than the provided date
-            if date_formated>updated_to:
-                # Format the update date
-                update_to_formatted = date_formated.strftime(format)
-                print(f"File date: {update_to_formatted}. Adding to filtered files.")
-                file["updated_to"] = update_to_formatted
-                files_dicts.append(file)
-                
-            
-            else:
-                print("File does not meet update criteria. Skipping...") 
 
-        # Check if any files were found after the updated date
+            print(f"Comparing file: {tmp_path}")
+            try:
+                delete_hidden_sheets(file=tmp_path)
+            except Exception:
+                pass
+
+            try:
+                wb = openpyxl.load_workbook(tmp_path, data_only=True)
+                sheet = wb.worksheets[0]
+                max_date = None
+
+                for r in range(1, sheet.max_row + 1):
+                    c1 = sheet.cell(r, 1).value
+                    if c1 is None:
+                        continue
+                    if isinstance(c1, (datetime.datetime, datetime.date)):
+                        y = c1.year
+                        m = c1.month
+                        _, last_day = calendar.monthrange(y, m)
+                        d_str = f"{y:04d}-{m:02d}-{last_day:02d}"
+                        if max_date is None or d_str > max_date:
+                            max_date = d_str
+                    elif isinstance(c1, (int, float)):
+                        y = int(c1)
+                        if 1900 <= y <= 2100:
+                            d_str = f"{y:04d}-12-31"
+                            if max_date is None or d_str > max_date:
+                                max_date = d_str
+                    elif isinstance(c1, str):
+                        m_date = re.search(r"(\d{4})-(\d{1,2})", c1.strip())
+                        if m_date:
+                            y = int(m_date.group(1))
+                            m = int(m_date.group(2))
+                            _, last_day = calendar.monthrange(y, m)
+                            d_str = f"{y:04d}-{m:02d}-{last_day:02d}"
+                            if max_date is None or d_str > max_date:
+                                max_date = d_str
+
+                if max_date:
+                    file_date = format_date(max_date)
+                    if file_date > updated_to_dt:
+                        update_to_formatted = file_date.strftime(format)
+                        print(f"File date: {update_to_formatted}. Adding to filtered files.")
+                        file["updated_to"] = update_to_formatted
+                        files_dicts.append(file)
+                    else:
+                        print(f"File date: {file_date.strftime(format)} <= {updated_to_dt.strftime(format)}. Skipping...")
+            except Exception as e:
+                print(f"Error processing file {tmp_path}: {e}")
+
         if not len(files_dicts):
-            print(f"There are NO files after {updated_to.strftime(format)}")
+            print(f"There are NO files after {updated_to_dt.strftime(format)}")
             return False
-        files_dicts_with_pdfs = []
-        
-        for file in files_dicts:
-            parsed_url = urllib.parse.urlparse(file['download_url'])
-            root_url = os.path.dirname(parsed_url.path)
-            if 'pdf' in help_dict.get(root_url, {}):
-                pdf_file = help_dict[root_url]['pdf']
-                pdf_file["updated_to"] = file["updated_to"]
-                files_dicts_with_pdfs.append(pdf_file)
-            files_dicts_with_pdfs.append(file)
-        print(len(files_dicts_with_pdfs))
-        return files_dicts_with_pdfs
-    
-# if __name__ == "__main__":
-#     robot = D_BO_000000103()
-#     x = robot.get_file_url(main_url="https://www.bcb.gob.bo/?q=pub_boletin-estadistico",updated_to="2023-10-21")
-#     print(len(x))
-#     print(x)
-#     # files = [{'download_url': 'https://www.bcb.gob.bo/webdocs/publicacionesbcb/2024/04/10/01.01.xlsx', 'tmp_path': r"C:\Users\Kevin Padilla\Downloads\01.01 (1).xlsx"}]
-#     # y = robot.compare_files(files_paths=files,updated_to="2023-01-21")
-#     # print(y)
+
+        return files_dicts
+
 
 Executor_D_BO_000000103 = D_BO_000000103
 Robot = D_BO_000000103

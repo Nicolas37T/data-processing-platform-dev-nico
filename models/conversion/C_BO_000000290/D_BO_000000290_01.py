@@ -49,34 +49,15 @@ class D_BO_000000290_01(Conversion_Base):
         try:
             file_name = os.path.basename(file_path)
 
-            # 1. Resolve the temporal cut dynamically from the file name.
-            cut_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", file_name)
-            if cut_match:
-                cut_year = int(cut_match.group(1))
-                cut_month = int(cut_match.group(2))
-                cut_day = int(cut_match.group(3))
-            else:
-                # Fallback for names formatted as YYYYMM (no separators).
-                cut_match = re.search(r"(\d{4})(\d{2})", file_name)
-                if cut_match:
-                    cut_year = int(cut_match.group(1))
-                    cut_month = int(cut_match.group(2))
-                    cut_day = calendar.monthrange(cut_year, cut_month)[1]
-                else:
-                    cut_year = 2026
-                    cut_month = 12
-                    cut_day = 31
-            cut_date = f"{cut_year:04d}-{cut_month:02d}-{cut_day:02d}"
-
-            # 2. Load the target sheet (raw, without header inference).
-            sheet_index = max(int(page_number) - 1, 0)
-            sheet = pd.read_excel(file_path, sheet_name=sheet_index, header=None)
-
             # Nested helper: normalize any cell into a single-spaced string.
             def clean_text(value) -> str:
                 return re.sub(r"\s+", " ", str(value)).strip()
 
-            # 3. Locate the header row (the one holding the month names).
+            # 1. Load the target sheet (raw, without header inference).
+            sheet_index = max(int(page_number) - 1, 0)
+            sheet = pd.read_excel(file_path, sheet_name=sheet_index, header=None)
+
+            # 2. Locate the header row (the one holding the month names).
             header_row = None
             for r in range(len(sheet)):
                 labels = [clean_text(v).lower() for v in sheet.iloc[r].tolist() if pd.notna(v)]
@@ -89,6 +70,48 @@ class D_BO_000000290_01(Conversion_Base):
 
             # Master concept (nv1) is the label of the first column header.
             master_concept = clean_text(sheet.iloc[header_row, 0])
+
+            # 3. Resolve the temporal cut dynamically:
+            # Priority 1: Extract from internal sheet header (e.g. "AL 30 DE SEPTIEMBRE DE 2026")
+            cut_year, cut_month, cut_day = None, None, None
+            for r in range(header_row):
+                for c in range(min(5, sheet.shape[1])):
+                    cell_val = sheet.iloc[r, c]
+                    if pd.notna(cell_val):
+                        m_hdr = re.search(
+                            r"AL\s+(\d{1,2})\s+DE\s+([A-Za-zÁÉÍÓÚáéíóú]+)\s+DE\s+(\d{4})",
+                            clean_text(cell_val),
+                            re.IGNORECASE,
+                        )
+                        if m_hdr:
+                            m_num = month_to_number(m_hdr.group(2).lower())
+                            if m_num:
+                                cut_day = int(m_hdr.group(1))
+                                cut_month = m_num
+                                cut_year = int(m_hdr.group(3))
+                                break
+                if cut_month:
+                    break
+
+            # Priority 2: Extract from file_path or file_name
+            if not cut_month:
+                cut_match = re.search(r"(\d{4})-(\d{2})-(\d{2})", file_path)
+                if cut_match:
+                    cut_year = int(cut_match.group(1))
+                    cut_month = int(cut_match.group(2))
+                    cut_day = int(cut_match.group(3))
+                else:
+                    cut_match = re.search(r"(\d{4})(\d{2})", file_path)
+                    if cut_match:
+                        cut_year = int(cut_match.group(1))
+                        cut_month = int(cut_match.group(2))
+                        cut_day = calendar.monthrange(cut_year, cut_month)[1]
+                    else:
+                        cut_year = 2026
+                        cut_month = 9
+                        cut_day = 30
+
+            cut_date = f"{cut_year:04d}-{cut_month:02d}-{cut_day:02d}"
 
             # 4. Build the report titles from the lines above the header.
             titles = []

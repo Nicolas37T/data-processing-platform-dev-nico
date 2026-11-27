@@ -3,6 +3,7 @@ import re
 import cohere
 import time
 import numpy as np
+import pandas as pd
 from typing import List
 from dotenv import load_dotenv
 # from openai import OpenAI
@@ -59,6 +60,10 @@ class IA_Tools():
     
     @staticmethod
     def standardize_text(text:str)->str:
+        if isinstance(text, pd.Series):
+            return text.apply(IA_Tools.standardize_text)
+        if isinstance(text, list):
+            return [IA_Tools.standardize_text(t) for t in text]
         spanish_stop_words = [
                 "de", "la", "que", "el", "en", "y", "a", "los", "del", "se", "las", "por", "un", "para", 
                 "con", "no", "una", "su", "al", "lo", "como", "más", "pero", "sus", "le", "ya", "o", "este", 

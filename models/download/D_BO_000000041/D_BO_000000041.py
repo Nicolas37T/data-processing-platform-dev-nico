@@ -1,9 +1,8 @@
+from models.download.Download_Base import Download_Base
 import sys, time, re, traceback, os
-sys.path.append("..")
 from playwright.sync_api import sync_playwright, expect
 import pandas as pd
 from models.download.tools.download_tools import format_date, text_extract, delete_hidden_sheets, month_abr_to_number, month_to_number
-from models.download.Download_Base import Download_Base
 
 class D_BO_000000041(Download_Base):
     def verify_url(self,url, retries=3, wait_time=3, timeout=120, is_download_url=False):

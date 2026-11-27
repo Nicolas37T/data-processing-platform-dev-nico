@@ -1,4 +1,5 @@
 import os
+import re
 import importlib
 import pytz
 import traceback
@@ -50,6 +51,8 @@ def get_executor(code):
     return class_()
 
 def create_dag(dag, connection_id, id_dag=None):
+    # 🛡️ Protección de concurrencia: Evita ejecuciones paralelas sobre la misma tabla
+    dag.max_active_runs = 1
 
     def dag_failure_callback(context):
         ti = context["ti"]
@@ -194,13 +197,13 @@ def create_dag(dag, connection_id, id_dag=None):
                         """))
 
     def _post_load(ti):
+        code = ti.xcom_pull(key='code', task_ids='get_migration_data')
         num_records_before = ti.xcom_pull(key='num_records_before', task_ids='pre_load')
         load_metadata = ti.xcom_pull(key='load_metadata', task_ids='load')
 
         num_records_added = load_metadata['num_records_after'] - num_records_before
 
-        print(num_records_added)
-        print(load_metadata['num_records'])
+        print(f"[POST_LOAD] Filas antes: {num_records_before} | Filas después: {load_metadata['num_records_after']} | Agregadas: {num_records_added} | Esperadas: {load_metadata['num_records']}")
 
         if num_records_added == load_metadata['num_records']:
             converted_to = ti.xcom_pull(key='converted_to', task_ids='pre_load')
@@ -212,6 +215,12 @@ def create_dag(dag, connection_id, id_dag=None):
                 print(f"Warning: Could not update migration DAG metadata tag: {e}")
             return 'record_migration'
 
+        print(
+            f"[POST_LOAD_ERROR] Discrepancia de filas: se agregaron {num_records_added} "
+            f"vs {load_metadata['num_records']} esperadas. "
+            f"(num_records_after={load_metadata['num_records_after']}, num_records_before={num_records_before}). "
+            f"Causa común: Ejecución concurrente simultánea o registros residuales."
+        )
         return 'notify_post_load_error'
 
     def _trigger_product_dags(ti):

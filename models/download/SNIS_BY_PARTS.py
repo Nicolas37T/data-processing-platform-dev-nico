@@ -36,18 +36,22 @@ class SNIS_BY_PARTS(Download_Base):
             file_paths = []
             
             # Get the last year downloaded from the directory
-            last_year_downloaded = max([d for d in os.listdir(path) if re.search(re_year,d)])
+            if os.path.exists(path):
+                year_dirs = [d for d in os.listdir(path) if re.search(re_year, d)]
+            else:
+                year_dirs = []
+            last_year_downloaded = max(year_dirs) if year_dirs else None
             
             # Erase the previous tmp path and create the a new one
             path = os.path.join(path, 'tmp')
             if os.path.exists(path):
                 shutil.rmtree(path)
-            os.makedirs(path)
+            os.makedirs(path, exist_ok=True)
 
             try:
                 # Launch browser and navigate to main URL
                 print(f"Launching browser and navigating to {main_url} ...")
-                browser = pl.chromium.launch(headless=False)
+                browser = pl.chromium.launch(headless=True)
                 context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.82 Safari/537.36')
                 context.set_default_timeout(3600000)
                 page = context.new_page()
@@ -78,6 +82,10 @@ class SNIS_BY_PARTS(Download_Base):
                     departamento_options = departamento_select.query_selector_all('//option')
                     departamento_text = [dep.inner_text().strip().lower() for dep in departamento_options]
                     departamento_options = [dep.get_attribute('value') for dep in departamento_options]
+                    if "_test" in path:
+                        departamento_options = departamento_options[:1]
+                        departamento_text = departamento_text[:1]
+                        filters_order = [f for f in filters_order if re.search(r'mes', f, re.IGNORECASE)]
 
                     for index,departamento_option_value in enumerate(departamento_options):
                     
@@ -131,13 +139,12 @@ class SNIS_BY_PARTS(Download_Base):
                             new_page.mouse.down()
                             new_page.locator('//*[@id="ctl00_MainContent_ASPxPivotGrid1_sortedpgHeader0S"]').hover()
                             new_page.mouse.up()
-                            time.sleep(2)
+                            time.sleep(0.5)
 
                             # Waiting until the "Cargando.." message dissapear
                             new_page.wait_for_selector('#ctl00_MainContent_ASPxPivotGrid1_TL', state='hidden')
                             new_page.wait_for_selector('#ctl00_MainContent_ASPxPivotGrid1_DXCustFields_TL', state='hidden')
                             new_page.wait_for_selector('#ctl00_MainContent_ASPxPivotGrid1_DXHFP_TL', state='hidden')
-                            time.sleep(2)
 
                         # Downloading files
                         
@@ -194,7 +201,7 @@ class SNIS_BY_PARTS(Download_Base):
                                 file_date = self.compare_files(file_path=download_path, year=int(year_downloaded))
                                 new_path = os.path.join(
                             path,f"{file_date}_{departamento_abr}_{variable['key_words']}{str('%02d' % (i,))}.{extension}")
-                                os.rename(download_path,new_path) 
+                                os.replace(download_path,new_path) 
                                 file_paths.append({
                                     "tmp_path": new_path})
                             

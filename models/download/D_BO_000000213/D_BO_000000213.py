@@ -1,6 +1,5 @@
 from models.download.Download_Base import Download_Base
 import sys
-sys.path.append("..")
 from models.download.SNIS import SNIS
 
 class D_BO_000000213(SNIS):

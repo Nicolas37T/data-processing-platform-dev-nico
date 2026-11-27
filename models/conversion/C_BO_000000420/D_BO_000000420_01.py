@@ -110,7 +110,8 @@ class D_BO_000000420_01(Conversion_Base):
                 if s2.startswith(("(a)", "(1)", "(2)", "(3)", "Nota:")) or s1.startswith(("FUENTE", "ELABORAC")):
                     continue
 
-                has_num = any(isinstance(sheet.cell(r, c).value, (int, float)) for c in cols_info.keys())
+                # Only check numeric values in regular monthly columns (ignoring summary/accumulated columns at the end)
+                has_num = any(isinstance(sheet.cell(r, c).value, (int, float)) for c, info in cols_info.items() if info[1] is None)
 
                 # Section (nv1) detection
                 if s2.startswith("TOTAL VALOR DE OPERACIONES (En millones de Bolivianos)"):
@@ -164,7 +165,7 @@ class D_BO_000000420_01(Conversion_Base):
                         current_nv3 = s2
                         nv3 = current_nv3
                         nv4 = None
-                    elif "(En millones de Bolivianos)" in s2 and pending_label:
+                    elif "millones de bolivianos" in s2.lower() and pending_label:
                         current_nv3 = pending_label
                         nv3 = current_nv3
                         nv4 = None
@@ -188,7 +189,11 @@ class D_BO_000000420_01(Conversion_Base):
                         "Pagos Inmediatos", "Cheques", "Tarjetas", "Adelantos", "Retiros",
                         "Número de operaciones", "Numero de operaciones"
                     ]):
-                        if has_num:
+                        next_r = r + 1
+                        next_s2 = clean_text(sheet.cell(next_r, 2).value).lower()
+                        next_s3 = clean_text(sheet.cell(next_r, 3).value).lower()
+                        is_next_unit = "millones de bolivianos" in next_s2 or "millones de bolivianos" in next_s3
+                        if has_num and not is_next_unit:
                             nv3 = current_nv3
                             nv4 = s2
                         else:
@@ -201,7 +206,7 @@ class D_BO_000000420_01(Conversion_Base):
                         else:
                             pending_label = f"{pending_label or ''} - Pagos Inmediatos".strip(" -")
                             continue
-                    elif "(En millones de Bolivianos)" in (s2, s3) and pending_label:
+                    elif ("millones de bolivianos" in s2.lower() or "millones de bolivianos" in s3.lower()) and pending_label:
                         nv3 = current_nv3
                         nv4 = pending_label
                         pending_label = None

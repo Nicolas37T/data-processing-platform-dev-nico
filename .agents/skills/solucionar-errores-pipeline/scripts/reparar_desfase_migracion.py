@@ -10,6 +10,11 @@ import json
 import sys
 import paramiko
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 SERVER_HOST = "10.0.0.16"
 SERVER_USER = "datax-pds"
 SERVER_PASS = ".datax-pds*/$"
@@ -38,26 +43,32 @@ def reparar_migracion(report_code: str):
         print(f"❌ Error al conectar por SSH a {SERVER_HOST}: {e}")
         return
 
-    # 1. Obtener storage_table de platform_db
+    # 1. Obtener storage_table y load_scope de platform_db
     cmd_info = f"""docker exec data-processing-platform-dev-postgres-1 psql -U postgres -d platform_db -t -A -c "
-        SELECT storage_table FROM report WHERE code = '{report_code}';
+        SELECT storage_table || '|' || COALESCE(load_scope, '') FROM report WHERE code = '{report_code}';
     " """
     stdin, stdout, stderr = client.exec_command(cmd_info)
-    storage_table = stdout.read().decode().strip()
+    info_out = stdout.read().decode().strip()
 
-    if not storage_table or ";" not in storage_table:
+    if not info_out or ";" not in info_out:
         print(
             f"❌ No se encontró storage_table para {report_code} en platform_db"
         )
         client.close()
         return
 
+    storage_table, load_scope = info_out.split("|")
     schema, table = storage_table.split(";")
-    print(f"📋 Tabla Destino: \"{schema}\".\"{table}\" en DATA_DB_{country}")
+    print(f"📋 Tabla Destino: \"{schema}\".\"{table}\" en DATA_DB_{country} (Scope: '{load_scope}')")
 
-    # 2. Localizar el último archivo SQLite
+    # 2. Localizar el último archivo SQLite (priorizando archivos con fecha YYYY-MM-DD)
     cmd_find = f"""docker exec data-processing-platform-dev-airflow-worker-1 bash -c '
-        find /mnt/datos1/data_process/{country}/{dag_base}/ -name "*{report_code}.sqlite" | sort | tail -n 1
+        LATEST=$(find /mnt/datos1/data_process/{country}/{dag_base}/ -name "[0-9]*_{report_code}.sqlite" | sort | tail -n 1)
+        if [ -z "$LATEST" ]; then
+            find /mnt/datos1/data_process/{country}/{dag_base}/ -name "*{report_code}.sqlite" | sort | tail -n 1
+        else
+            echo "$LATEST"
+        fi
     '"""
     stdin, stdout, stderr = client.exec_command(cmd_find)
     last_sqlite = stdout.read().decode().strip()
@@ -71,12 +82,15 @@ def reparar_migracion(report_code: str):
 
     print(f"📂 Último SQLite Detectado: {last_sqlite}")
 
-    # 3. Limpiar duplicados o registros en tabla destino
-    cmd_clean = f"""docker exec data-processing-platform-dev-postgres-1 psql -U postgres -d DATA_DB_{country} -c "
-        DELETE FROM \\"{schema}\\".\\"{table}\\";
-    " """
-    stdin, stdout, stderr = client.exec_command(cmd_clean)
-    print(f"🧹 Limpieza de tabla: {stdout.read().decode().strip()}")
+    # 3. Limpiar tabla solo si el scope es acumulativo 'all', o dejar que pre_load gestione el rango
+    if load_scope.strip().lower() == "all":
+        cmd_clean = f"""docker exec data-processing-platform-dev-postgres-1 psql -U postgres -d DATA_DB_{country} -c "
+            DELETE FROM \\"{schema}\\".\\"{table}\\";
+        " """
+        stdin, stdout, stderr = client.exec_command(cmd_clean)
+        print(f"🧹 Limpieza total (scope=all): {stdout.read().decode().strip()}")
+    else:
+        print(f"ℹ️ Scope no es 'all'; la limpieza por rango de fechas la realizará pre_load en Airflow.")
 
     # 4. Disparar Migración en Airflow
     conf = json.dumps(

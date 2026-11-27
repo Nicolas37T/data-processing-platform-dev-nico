@@ -124,6 +124,5 @@ class D_BO_000000491(CNDC):
     # y = robot.compare_files(files_paths=files,updated_to="2024-08-08")
     # print(y)
 
-
 Executor_D_BO_000000491 = D_BO_000000491
 Robot = D_BO_000000491

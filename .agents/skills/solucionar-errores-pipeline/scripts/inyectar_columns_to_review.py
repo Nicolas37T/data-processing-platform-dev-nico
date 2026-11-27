@@ -10,10 +10,16 @@ import sqlite3
 import sys
 import pandas as pd
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 def inyectar_columns(sqlite_path: str, columns: list = None):
     if not os.path.exists(sqlite_path):
-        print(f"❌ El archivo no existe: {sqlite_path}")
+        print(f"[ERROR] El archivo no existe: {sqlite_path}")
         return False
 
     with sqlite3.connect(sqlite_path) as conn:
@@ -26,7 +32,7 @@ def inyectar_columns(sqlite_path: str, columns: list = None):
         ]
 
         if not tables:
-            print(f"⚠️ No se encontraron tablas de datos en {sqlite_path}")
+            print(f"[WARN] No se encontraron tablas de datos en {sqlite_path}")
             return False
 
         target_table = tables[0]
@@ -37,7 +43,7 @@ def inyectar_columns(sqlite_path: str, columns: list = None):
             columns = [col for col in df.columns if col.startswith("nv")]
             if not columns:
                 print(
-                    f"⚠️ No se detectaron columnas 'nv' en {target_table}. Columnas encontradas: {df.columns.tolist()}"
+                    f"[WARN] No se detectaron columnas 'nv' en {target_table}. Columnas encontradas: {df.columns.tolist()}"
                 )
                 return False
 
@@ -46,7 +52,7 @@ def inyectar_columns(sqlite_path: str, columns: list = None):
             "columns_to_review", conn, if_exists="replace", index=False
         )
         print(
-            f"✅ Tabla 'columns_to_review' inyectada exitosamente en {sqlite_path} con columnas: {columns}"
+            f"[OK] Tabla 'columns_to_review' inyectada exitosamente en {sqlite_path} con columnas: {columns}"
         )
         return True
 

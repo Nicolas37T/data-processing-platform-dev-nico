@@ -85,7 +85,7 @@ def createDirectoryStruct(file_date, base_path, publication_frequency, format='%
         print("Publication frecuency uwknomed")
     # Create the directory if it doesn't exist
     if not os.path.exists(filePath):
-        os.makedirs(filePath)
+        os.makedirs(filePath, exist_ok=True)
     return filePath
 
 
